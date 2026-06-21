@@ -1,0 +1,56 @@
+{
+  "methodology": [
+    "thank",
+    "empathize",
+    "ask_open_question",
+    "clarify_value",
+    "tie_solution",
+    "provide_proof",
+    "close_or_continue"
+  ],
+  "objections": {
+    "price_objection": {
+      "signals": [
+        "está caro",
+        "se me hace caro",
+        "no tengo presupuesto"
+      ],
+      "first_response_goal": "validar y descubrir si la objeción es precio, valor o comparación",
+      "first_question": "¿Se te hace caro por el pago inicial o porque todavía no ves claro cuánto te puede regresar en tiempo o leads?"
+    },
+    "already_have_person": {
+      "signals": [
+        "ya tengo recepcionista",
+        "ya tengo alguien que responde"
+      ],
+      "first_response_goal": "posicionar MovIA como apoyo, no reemplazo",
+      "first_question": "¿Esa persona alcanza a responder rápido todos los mensajes o se le acumulan?"
+    },
+    "fear_wrong_answers": {
+      "signals": [
+        "me preocupa que responda mal",
+        "no quiero perder control"
+      ],
+      "first_response_goal": "explicar pruebas, revisión y aprobación previa",
+      "first_question": "¿Lo que más te preocupa es que diga información incorrecta o que responda con un tono que no representa tu negocio?"
+    },
+    "wants_free_trial": {
+      "signals": [
+        "quiero probar",
+        "tienen prueba",
+        "demo"
+      ],
+      "first_response_goal": "explicar demo limitado y depósito para agente personalizado",
+      "first_question": "¿Quieres probar el concepto general o ya quieres ver algo configurado con información real de tu negocio?"
+    },
+    "competitor_comparison": {
+      "signals": [
+        "manychat",
+        "otra plataforma",
+        "más barato"
+      ],
+      "first_response_goal": "diferenciar DIY vs done-for-you",
+      "first_question": "¿Buscas configurarlo tú mismo o prefieres que MovIA lo deje armado con tu información?"
+    }
+  }
+}

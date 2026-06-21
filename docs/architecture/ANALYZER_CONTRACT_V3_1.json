@@ -1,0 +1,159 @@
+{
+  "analyzer_contract_version": "3.1",
+  "source_of_truth": "src/movia_sales_agent/analyzer/contract_v3.py",
+  "responsibility": "LLM observes independent linguistic facts only; code derives dependent commercial fields.",
+  "enums": {
+    "observed_business_problems": [
+      "high_message_volume",
+      "slow_response",
+      "lead_drop_off",
+      "repetitive_questions",
+      "manual_data_capture",
+      "manual_follow_up",
+      "missed_leads",
+      "disorganized_information",
+      "manual_quoting",
+      "manual_scheduling",
+      "manual_order_processing",
+      "support_bottleneck",
+      "unknown_business_problem"
+    ],
+    "semantic_strength": [
+      "explicit",
+      "unambiguous_implicit"
+    ],
+    "requested_agent_capabilities": [
+      "answer_customer_questions",
+      "provide_prices",
+      "provide_catalog_information",
+      "capture_lead_data",
+      "qualify_leads",
+      "redirect_to_human",
+      "understand_audio",
+      "understand_images",
+      "explain_business_process",
+      "collect_order_information",
+      "persuade_leads",
+      "handle_sales_objections",
+      "recommend_products_commercially",
+      "close_sale"
+    ],
+    "requested_agent_actions": [
+      "schedule_appointment",
+      "generate_quote",
+      "create_order",
+      "read_external_system",
+      "write_external_system",
+      "update_external_record",
+      "send_reminder",
+      "follow_up_lead",
+      "send_notification",
+      "take_payment",
+      "unknown_external_action"
+    ],
+    "requirement_update_intents": [
+      "no_change",
+      "merge",
+      "replace"
+    ],
+    "requested_products": [
+      "none",
+      "movia_captura",
+      "movia_hibrido",
+      "movia_ventas",
+      "movia_pro_comercial",
+      "unknown_product"
+    ],
+    "prior_reference_types": [
+      "none",
+      "implicit_prior_reference",
+      "topic_reference",
+      "entity_reference",
+      "assistant_commitment_reference"
+    ],
+    "purchase_readiness": [
+      "none",
+      "low",
+      "medium",
+      "high",
+      "explicit_start"
+    ],
+    "objection_types": [
+      "none",
+      "price_objection",
+      "trust_objection",
+      "fear_wrong_answers",
+      "already_have_person",
+      "already_use_whatsapp_business",
+      "need_to_think",
+      "wants_free_trial",
+      "competitor_comparison",
+      "not_sure_if_needed",
+      "scope_objection",
+      "channel_connection_concern",
+      "support_concern"
+    ],
+    "objection_strengths": [
+      "none",
+      "soft",
+      "hard"
+    ],
+    "objection_relations": [
+      "none",
+      "new",
+      "continuation",
+      "reaffirmed",
+      "clarified",
+      "resolved",
+      "unrelated"
+    ],
+    "intents": [
+      "greeting",
+      "general_info",
+      "pricing_question",
+      "cheapest_plan_question",
+      "product_scope_question",
+      "product_recommendation_question",
+      "platform_steps_question",
+      "onboarding_question",
+      "policy_question",
+      "channel_question",
+      "integration_question",
+      "industry_fit_question",
+      "comparison_question",
+      "explicit_start_request",
+      "post_purchase_request",
+      "support_request",
+      "unknown"
+    ]
+  },
+  "semantic_fields": [
+    "observed_business_problems",
+    "requested_agent_capabilities",
+    "requested_agent_actions",
+    "declared_external_action_count",
+    "requirement_update_intent"
+  ],
+  "banned_llm_fields": [
+    "has_objection",
+    "references_prior_message",
+    "explicit_turn_number",
+    "explicit_start_intent",
+    "action_requirement",
+    "known_product_fit",
+    "recommended_product",
+    "sales_stage",
+    "macro_action",
+    "micro_action",
+    "cta_type",
+    "next_question",
+    "next_question_key",
+    "needs_rag"
+  ],
+  "shadow_parser": {
+    "shadow_parser_may_observe": true,
+    "shadow_parser_may_override": false,
+    "shadow_parser_may_choose_product": false,
+    "shadow_parser_may_choose_action": false
+  }
+}

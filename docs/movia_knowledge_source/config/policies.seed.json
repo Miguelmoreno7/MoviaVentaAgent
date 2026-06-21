@@ -1,0 +1,28 @@
+{
+  "deposit": {
+    "required": true,
+    "percentage": 50,
+    "applies_to": "paid_custom_project",
+    "does_not_apply_to": [
+      "demo"
+    ],
+    "description": "Para iniciar un proyecto de agente personalizado, el cliente debe pagar un depósito del 50% del setup. El demo limitado de 10 mensajes no requiere depósito y no inicia trabajo personalizado."
+  },
+  "final_payment": {
+    "trigger": "Después de que el cliente aprueba el agente",
+    "percentage": 50
+  },
+  "refund_policy": {
+    "refunds_allowed": false,
+    "description": "No hay reembolso por ningún motivo, incluyendo el depósito inicial."
+  },
+  "monthly_billing": {
+    "starts_when": "Cuando el cliente aprueba el agente",
+    "non_payment_result": "El agente se pausa hasta que el cliente pague la mensualidad"
+  },
+  "api_tokens": {
+    "included": true,
+    "fair_use": true,
+    "overage_policy": "Si el uso excede significativamente el límite esperado, MovIA notificará cargo o ajuste adicional."
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "agents": [
+    {
+      "key": "movia_sales_agent",
+      "name": "MovIA Sales Agent",
+      "enabled": true,
+      "default_version": "v1",
+      "versions": [
+        {
+          "version": "v1",
+          "entrypoint": "movia_sales_agent.api.main:app",
+          "status": "active",
+          "config_json": {
+            "feature": "whatsapp_sales_agent",
+            "webhook_path": "/webhooks/whatsapp",
+            "health_path": "/health"
+          }
+        }
+      ]
+    }
+  ]
+}

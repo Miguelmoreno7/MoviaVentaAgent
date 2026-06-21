@@ -1,0 +1,24 @@
+{
+  "app_link": "https://app.moviatech.com.mx",
+  "steps": [
+    "Registrarse en la app de MovIA.",
+    "Seleccionar idioma si lo desea.",
+    "Elegir Customer/Cliente, no Agencia.",
+    "Elegir entre crear un demo limitado o crear un agente personalizado.",
+    "Si crea demo: probar un agente limitado a 10 mensajes, sin depósito, sin trabajo personalizado y sin despliegue en WhatsApp.",
+    "Si crea agente personalizado: seleccionar producto.",
+    "Llenar objetivo, meta y descripción del agente.",
+    "Completar información del negocio y contacto.",
+    "Elegir preferencia de contacto.",
+    "Revisar pedido y pagar 50% de depósito por Stripe solo para iniciar un proyecto de agente personalizado.",
+    "Subir PDFs, URL y notas de negocio.",
+    "Agregar ejemplos de conversación.",
+    "Conectar WhatsApp Business mediante Meta/Facebook.",
+    "Revisar información final.",
+    "Esperar construcción del agente.",
+    "Revisar pruebas en Client Review.",
+    "Aprobar o solicitar ajustes.",
+    "Pagar restante.",
+    "Activar agente en WhatsApp."
+  ]
+}

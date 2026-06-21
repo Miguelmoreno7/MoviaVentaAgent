@@ -1,0 +1,65 @@
+{
+  "rules": [
+    {
+      "condition": "pricing_question",
+      "sources": [
+        "postgres.products"
+      ],
+      "rag": false
+    },
+    {
+      "condition": "product_scope_question",
+      "sources": [
+        "postgres.products",
+        "config.products"
+      ],
+      "rag": false
+    },
+    {
+      "condition": "platform_steps_question",
+      "sources": [
+        "config.platform_steps"
+      ],
+      "rag": false
+    },
+    {
+      "condition": "policy_question",
+      "sources": [
+        "postgres.policies",
+        "config.policies"
+      ],
+      "rag": false
+    },
+    {
+      "condition": "industry_fit_question",
+      "sources": [
+        "postgres.products",
+        "rag.use_cases"
+      ],
+      "rag": true
+    },
+    {
+      "condition": "comparison_question",
+      "sources": [
+        "rag.comparisons",
+        "config.sales_actions"
+      ],
+      "rag": true
+    },
+    {
+      "condition": "objection",
+      "sources": [
+        "config.objection_playbook",
+        "postgres.products"
+      ],
+      "rag": "optional"
+    },
+    {
+      "condition": "compound_question",
+      "sources": [
+        "multiple"
+      ],
+      "rag": "as_needed"
+    }
+  ]
+}

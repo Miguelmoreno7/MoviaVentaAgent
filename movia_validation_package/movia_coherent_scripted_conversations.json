@@ -1,0 +1,1083 @@
+{
+  "evaluation_contract_version": "3.0",
+  "suite_type": "coherent_scripted",
+  "causal_continuity": true,
+  "agent_contract_version": "2.0",
+  "dataset_version": "v3.0-coherent-2026-06-05",
+  "run_mode": "scripted_replay",
+  "agent_name": "MovIA Preventa",
+  "commercial_contract_version": "2.0",
+  "channel": "WhatsApp",
+  "date_created": "2026-06-05",
+  "debug_fields_required": [
+    "conversation_id",
+    "turn_id",
+    "primary_intent",
+    "topics",
+    "current_stage",
+    "macro_action",
+    "micro_action",
+    "objection_type",
+    "objection_flow_step",
+    "sources_used",
+    "final_cta_type"
+  ],
+  "global_pass_criteria": [
+    "hard_failures = 0",
+    "commercial_accuracy >= 0.95",
+    "policy_compliance >= 0.95",
+    "scope_control >= 0.95",
+    "coherent sales_progression is authoritative",
+    "coherent objection resolution is authoritative"
+  ],
+  "movia_ground_truth": {
+    "official_channel": "WhatsApp",
+    "upcoming_channels": ["Facebook", "Instagram"],
+    "available_products": ["MovIA Captura", "MovIA Hibrido"],
+    "unavailable_products": ["Agente MovIA Ventas", "Agente MovIA Pro Comercial"],
+    "app_url": "https://app.moviatech.com.mx",
+    "deposit_percentage": 50,
+    "refunds_allowed": false
+  },
+  "scenarios": [
+    {
+      "conversation_id": "MOVIA-COH-001",
+      "persona": "High-intent dental clinic owner who buys after price and process clarity",
+      "difficulty": "medium",
+      "success_goal": "Progress from discovery to Captura recommendation, soft close, explicit start and app registration.",
+      "primary_risks": ["premature close", "asking known information", "wrong price"],
+      "lead_profile_seed": {},
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Hola, tengo una clinica dental y nos llegan muchos WhatsApps de anuncios.",
+          "ideal_assistant": "Aterriza la necesidad y pregunta por el problema principal sin cerrar todavia.",
+          "expected": {
+            "current_stage": "discovery",
+            "macro_action": "discover_need",
+            "micro_action": "ask_pain_or_goal",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["json.tone_rules", "json.cta_rules", "json.sales_actions"],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "El problema es que preguntan precios y nadie contesta rapido.",
+          "ideal_assistant": "Usa el dolor declarado y pregunta si el agente solo debe responder o tambien agendar.",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["postgres.products", "json.sales_actions"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Solo quiero que responda dudas y capture datos del paciente.",
+          "ideal_assistant": "Recomienda MovIA Captura y explica por que encaja con responder y capturar leads.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_captura",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products", "json.sales_actions"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Cuanto cuesta Captura?",
+          "ideal_assistant": "Da precio oficial de Captura y mantiene el avance sin pedir otra vez el tipo de negocio.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_question",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Me gusta. Antes de pagar quiero entender como empiezo.",
+          "ideal_assistant": "Explica pasos de registro, informacion inicial y deposito del 50%.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "explain_process",
+            "micro_action": "explain_app_registration",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "explain_next_step",
+            "expected_sources": ["postgres.official_links", "json.platform_steps"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Ok, si eso queda claro, mandame el link para iniciar.",
+          "ideal_assistant": "Confirma que puede iniciar y manda link oficial con deposito del 50%.",
+          "expected": {
+            "current_stage": "closing",
+            "macro_action": "direct_close",
+            "micro_action": "send_app_link_and_deposit_step",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "direct_close",
+            "expected_sources": ["postgres.official_links", "json.platform_steps", "json.cta_rules"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Entonces entro a la app, lleno mis datos y pago 50%, correcto?",
+          "ideal_assistant": "Confirma el proceso y evita inventar pasos adicionales.",
+          "expected": {
+            "current_stage": "closing",
+            "macro_action": "explain_process",
+            "micro_action": "explain_deposit",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "explain_next_step",
+            "expected_sources": ["postgres.policies", "json.platform_steps"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "Perfecto, voy a registrarme ahorita.",
+          "ideal_assistant": "Cierra con el link oficial y siguiente paso inmediato.",
+          "expected": {
+            "current_stage": "closing",
+            "macro_action": "direct_close",
+            "micro_action": "send_app_link_and_deposit_step",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "direct_close",
+            "expected_sources": ["postgres.official_links", "json.cta_rules"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        }
+      ]
+    },
+    {
+      "conversation_id": "MOVIA-COH-002",
+      "persona": "Interested barbershop owner who wants to try the 10-message demo before buying",
+      "difficulty": "medium",
+      "success_goal": "Progress to a demo invitation without forcing purchase.",
+      "primary_risks": ["premature close", "confusing demo with free trial"],
+      "lead_profile_seed": {},
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Tengo barberia y respondo por WhatsApp. Quiero ver si esto me sirve.",
+          "ideal_assistant": "Pregunta el flujo principal de mensajes y reconoce que puede probar el demo.",
+          "expected": {
+            "current_stage": "discovery",
+            "macro_action": "discover_need",
+            "micro_action": "ask_pain_or_goal",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["json.tone_rules", "json.sales_actions"],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "La gente pregunta horarios, precios y si hay espacio hoy.",
+          "ideal_assistant": "Aclara si solo debe responder o tambien agendar citas.",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["postgres.products", "json.sales_actions"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Por ahora solo que responda y capture nombre y horario deseado.",
+          "ideal_assistant": "Recomienda Captura y explica que captura datos sin ejecutar agenda externa.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_captura",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "No quiero comprar sin verlo hablar como mi negocio.",
+          "ideal_assistant": "Trata esto como necesidad de demo, no como cierre; ofrece validar estilo con demo.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "persuade_value",
+            "micro_action": "explain_demo",
+            "objection_type": "trust_objection",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_question",
+            "expected_sources": ["json.platform_steps", "json.sales_actions"],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Si el demo son 10 mensajes, me sirve para probar el tono.",
+          "ideal_assistant": "Explica el demo de 10 mensajes como validacion de estilo antes de compra.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "explain_process",
+            "micro_action": "explain_demo",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "explain_next_step",
+            "expected_sources": ["json.platform_steps"],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Que informacion necesito preparar para ese demo?",
+          "ideal_assistant": "Pide informacion del negocio, ejemplos de preguntas y estilo de respuesta.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "explain_process",
+            "micro_action": "explain_documents",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "explain_next_step",
+            "expected_sources": ["json.platform_steps"],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Ya tengo preguntas frecuentes y precios.",
+          "ideal_assistant": "Confirma que eso sirve y pregunta si desea pasar al proceso de demo o registro.",
+          "expected": {
+            "current_stage": "ready_to_start",
+            "macro_action": "soft_close",
+            "micro_action": "ask_permission_to_send_link",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "ask_permission_to_send_link",
+            "expected_sources": ["json.cta_rules"],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "Si, pasame donde lo preparo para demo.",
+          "ideal_assistant": "Manda el link oficial como siguiente paso sin prometer compra obligatoria.",
+          "expected": {
+            "current_stage": "closing",
+            "macro_action": "direct_close",
+            "micro_action": "send_app_link",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "send_app_link",
+            "expected_sources": ["postgres.official_links", "json.cta_rules", "json.platform_steps"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        }
+      ]
+    },
+    {
+      "conversation_id": "MOVIA-COH-003",
+      "persona": "Price-sensitive restaurant owner with a real blocking objection that can be resolved",
+      "difficulty": "hard",
+      "success_goal": "Handle a hard price objection, reduce risk, then progress after explicit acceptance.",
+      "primary_risks": ["selling through hard objection", "wrong refund policy", "fixed-step objection progression"],
+      "lead_profile_seed": {},
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Tengo restaurante y se me van pedidos por tardar en WhatsApp.",
+          "ideal_assistant": "Descubre canal, volumen y si solo responde o toma acciones.",
+          "expected": {
+            "current_stage": "discovery",
+            "macro_action": "discover_need",
+            "micro_action": "ask_action_requirement",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["json.sales_actions"],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "Solo quiero responder menu, horarios y tomar datos del pedido.",
+          "ideal_assistant": "Recomienda Captura si no ejecuta acciones externas.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_captura",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Pero $4,900 se me hace caro. No voy a pagar eso sin estar seguro.",
+          "ideal_assistant": "Reconoce el bloqueo y pregunta que parte pesa mas sin cerrar.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "handle_objection",
+            "micro_action": "validate_and_clarify_objection",
+            "objection_type": "price_objection",
+            "objection_flow_step": "thank_empathize_ask_open_question",
+            "final_cta_type": "objection_question",
+            "expected_sources": ["postgres.products", "postgres.policies", "json.objection_playbook:price_objection"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Me pesa el deposito, no saber si va a responder bien.",
+          "ideal_assistant": "Clarifica valor y proceso de revision antes de activacion.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "handle_objection",
+            "micro_action": "clarify_objection_value",
+            "objection_type": "price_objection",
+            "objection_flow_step": "clarify_value",
+            "final_cta_type": "objection_question",
+            "expected_sources": ["postgres.policies", "json.objection_playbook:price_objection"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Si lo reviso antes de activarlo, eso me baja el riesgo.",
+          "ideal_assistant": "Ata la solucion a la preocupacion y explica revision/ajustes.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "handle_objection",
+            "micro_action": "tie_solution_to_objection",
+            "objection_type": "price_objection",
+            "objection_flow_step": "tie_solution",
+            "final_cta_type": "objection_question",
+            "expected_sources": ["postgres.policies", "json.objection_playbook:price_objection"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Ok, con eso ya no es tanto problema.",
+          "ideal_assistant": "Marca la objecion resuelta y retoma la recomendacion.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "handle_objection",
+            "micro_action": "close_or_continue_objection",
+            "objection_type": "price_objection",
+            "objection_flow_step": "resolved",
+            "final_cta_type": "soft_question",
+            "expected_sources": ["postgres.products", "json.objection_playbook:price_objection"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Entonces Captura seria el que me conviene?",
+          "ideal_assistant": "Confirma Captura y no vuelve a tratar la objecion como activa.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_captura",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "Si, quiero empezar pero explicame el pago.",
+          "ideal_assistant": "Explica deposito 50%, saldo al aprobar y mensualidad sin inventar reembolso.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "risk_reversal",
+            "micro_action": "explain_deposit",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_question",
+            "expected_sources": ["postgres.policies"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 9,
+          "user": "Listo, mandame el link oficial.",
+          "ideal_assistant": "Manda el link oficial y siguiente paso de registro.",
+          "expected": {
+            "current_stage": "closing",
+            "macro_action": "direct_close",
+            "micro_action": "send_app_link_and_deposit_step",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "direct_close",
+            "expected_sources": ["postgres.official_links", "json.cta_rules"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        }
+      ]
+    },
+    {
+      "conversation_id": "MOVIA-COH-004",
+      "persona": "Lead whose requested channel and scope should not be closed",
+      "difficulty": "hard",
+      "success_goal": "Protect scope and avoid closing when the lead needs unavailable Facebook/Instagram automation.",
+      "primary_risks": ["selling unavailable channels", "overpromising Captura", "premature close"],
+      "lead_profile_seed": {},
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Quiero un agente para Instagram DMs y Facebook que venda solo.",
+          "ideal_assistant": "Aclara que Facebook e Instagram estan en proceso y no venderlos como activos.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_channel_then_discover_main_channel",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_question",
+            "expected_sources": ["postgres.official_links", "postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "Entonces hoy no me sirve si solo uso Instagram.",
+          "ideal_assistant": "No forza cierre; pregunta si tambien atiende por WhatsApp.",
+          "expected": {
+            "current_stage": "discovery",
+            "macro_action": "discover_need",
+            "micro_action": "ask_main_channel",
+            "objection_type": "scope_objection",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Tambien tenemos WhatsApp, pero quiero que cierre ventas automaticas.",
+          "ideal_assistant": "Diferencia alcance actual y productos futuros sin vender MovIA Ventas como disponible.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "recommend_solution",
+            "micro_action": "explain_ventas_not_available",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_question",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Si no cierra ventas solo, que si puede hacer hoy?",
+          "ideal_assistant": "Explica responder, capturar, filtrar y acciones simples en Hibrido.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_scope_then_discover_business",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_question",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Necesito que cotice y registre pedidos en mi sistema.",
+          "ideal_assistant": "Identifica acciones externas y orienta a Hibrido o revision si excede dos acciones.",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Son como cinco acciones diferentes.",
+          "ideal_assistant": "No promete Hibrido si excede el alcance; redirige a revision humana.",
+          "expected": {
+            "current_stage": "handoff",
+            "macro_action": "handoff_to_miguel",
+            "micro_action": "redirect_custom_scope",
+            "objection_type": "scope_objection",
+            "objection_flow_step": "none",
+            "final_cta_type": "redirect_to_miguel",
+            "expected_sources": ["postgres.products", "json.post_purchase_handoff"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "No quiero hablar con nadie, pasame el link y ya.",
+          "ideal_assistant": "No cierra porque el alcance requiere revision.",
+          "expected": {
+            "current_stage": "handoff",
+            "macro_action": "handoff_to_miguel",
+            "micro_action": "redirect_custom_scope",
+            "objection_type": "scope_objection",
+            "objection_flow_step": "none",
+            "final_cta_type": "redirect_to_miguel",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "Ok, entonces si lo bajo a dos acciones me dices Hibrido?",
+          "ideal_assistant": "Explica que Hibrido puede cubrir hasta dos acciones simples y pide concretarlas.",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "clarify_action_count",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        }
+      ]
+    },
+    {
+      "conversation_id": "MOVIA-COH-005",
+      "persona": "Supplier operations lead whose needs reveal MovIA Hibrido is required",
+      "difficulty": "medium",
+      "success_goal": "Discover external actions, recommend Hibrido, answer pricing and close only after explicit start.",
+      "primary_risks": ["recommending Captura for action workflow", "wrong Hibrido price"],
+      "lead_profile_seed": {},
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Mis proveedores mandan tickets y fotos por WhatsApp. Quiero ordenarlo.",
+          "ideal_assistant": "Pregunta que debe pasar despues de recibir ticket y foto.",
+          "expected": {
+            "current_stage": "discovery",
+            "macro_action": "discover_need",
+            "micro_action": "ask_action_requirement",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["json.sales_actions"],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "Debe pedir numero de ticket, fecha, proveedor y foto.",
+          "ideal_assistant": "Reconoce captura de datos y pregunta si debe registrar o solo ordenar.",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Tambien quiero que lo registre en una hoja y avise a compras.",
+          "ideal_assistant": "Detecta acciones externas simples y orienta a Hibrido.",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Son solo esas dos acciones: registrar y avisar.",
+          "ideal_assistant": "Recomienda MovIA Hibrido y explica el limite de dos acciones simples.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_hibrido",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Cuanto cuesta Hibrido?",
+          "ideal_assistant": "Da precio oficial de Hibrido y mensualidad.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_question",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Me preocupa que con fotos se equivoque.",
+          "ideal_assistant": "Trata preocupacion de calidad como objecion real y explica revision/limites.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "handle_objection",
+            "micro_action": "validate_and_clarify_objection",
+            "objection_type": "fear_wrong_answers",
+            "objection_flow_step": "thank_empathize_ask_open_question",
+            "final_cta_type": "objection_question",
+            "expected_sources": ["postgres.policies", "json.objection_playbook:fear_wrong_answers"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Si puede pedir confirmacion humana cuando no este claro, me sirve.",
+          "ideal_assistant": "Resuelve la preocupacion y retoma Hibrido como recomendacion.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "handle_objection",
+            "micro_action": "close_or_continue_objection",
+            "objection_type": "fear_wrong_answers",
+            "objection_flow_step": "resolved",
+            "final_cta_type": "soft_question",
+            "expected_sources": ["postgres.products", "json.objection_playbook:fear_wrong_answers"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "Entonces quiero iniciar con Hibrido.",
+          "ideal_assistant": "Direct close permitido: link oficial, deposito y siguiente paso.",
+          "expected": {
+            "current_stage": "closing",
+            "macro_action": "direct_close",
+            "micro_action": "send_app_link_and_deposit_step",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "direct_close",
+            "expected_sources": ["postgres.official_links", "json.cta_rules", "json.platform_steps"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        }
+      ]
+    },
+    {
+      "conversation_id": "MOVIA-MEM-001",
+      "persona": "Dental clinic owner who reveals structured slots and later asks price",
+      "difficulty": "medium",
+      "success_goal": "Use known business type, channel, pain and action requirement without re-asking them.",
+      "primary_risks": ["asking known information", "null question key", "wrong product fit"],
+      "lead_profile_seed": {},
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Hola, tengo una clinica dental y casi todo nos llega por WhatsApp.",
+          "ideal_assistant": "Reconoce clinica dental y WhatsApp; pregunta solo por el dolor principal.",
+          "expected": {
+            "current_stage": "discovery",
+            "macro_action": "discover_need",
+            "micro_action": "ask_pain_or_goal",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["json.tone_rules", "json.cta_rules", "json.sales_actions"],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "El problema es que preguntan precios y nadie contesta rapido.",
+          "ideal_assistant": "Usa el dolor declarado y pregunta si solo debe responder o tambien hacer acciones.",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["postgres.products", "json.sales_actions"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Solo quiero que responda dudas y capture datos del paciente.",
+          "ideal_assistant": "Deriva Captura y no pregunta de nuevo negocio, canal ni dolor.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_captura",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products", "json.sales_actions"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Cuanto cuesta Captura?",
+          "ideal_assistant": "Da precio oficial de Captura y no vuelve a pedir datos conocidos.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "none",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Y no necesito agenda, solo responder y guardar datos.",
+          "ideal_assistant": "Confirma que Captura encaja sin volver a preguntar action_requirement.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_captura",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Entonces cual me recomiendas para mi clinica?",
+          "ideal_assistant": "Recomienda Captura usando clinica dental, WhatsApp y dolor de respuesta rapida.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_captura",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Explicame el proceso para iniciar.",
+          "ideal_assistant": "Explica registro, informacion inicial y deposito sin pedir slots conocidos.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "explain_process",
+            "micro_action": "explain_app_registration",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "explain_next_step",
+            "expected_sources": ["postgres.official_links", "json.platform_steps"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "Pasame el link para empezar.",
+          "ideal_assistant": "Direct close con link oficial y deposito.",
+          "expected": {
+            "current_stage": "closing",
+            "macro_action": "direct_close",
+            "micro_action": "send_app_link_and_deposit_step",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "direct_close",
+            "expected_sources": ["postgres.official_links", "json.cta_rules", "json.platform_steps"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        }
+      ]
+    },
+    {
+      "conversation_id": "MOVIA-MEM-002",
+      "persona": "Operations lead who references earlier product advice and deposit policy",
+      "difficulty": "medium-hard",
+      "success_goal": "Resolve historical references using prior turn evidence without leaking other leads.",
+      "primary_risks": ["historical reference miss", "prior commitment contradiction", "wrong product fit"],
+      "lead_profile_seed": {},
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Tengo proveedores que mandan tickets, fotos y datos de garantia.",
+          "ideal_assistant": "Detecta acciones externas y perfila Hibrido.",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "discovery_question",
+            "expected_sources": ["postgres.products", "json.sales_actions"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "Entonces que agente me conviene?",
+          "ideal_assistant": "Recomienda Hibrido por tickets, fotos y acciones externas.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_hibrido",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Cuanto cuesta Hibrido?",
+          "ideal_assistant": "Da precio oficial de Hibrido.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "none",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Lo de mis proveedores, era Captura o Hibrido?",
+          "ideal_assistant": "Usa memoria conversacional y responde Hibrido.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_hibrido",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Tu dijiste que el deposito era 50%, verdad?",
+          "ideal_assistant": "Confirma deposito oficial del 50% sin contradecir politica.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "risk_reversal",
+            "micro_action": "explain_testing_before_release",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "none",
+            "expected_sources": ["postgres.policies"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Cual era el plan que me recomendaste?",
+          "ideal_assistant": "Recupera que el plan recomendado era Hibrido.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_hibrido",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "final_cta_type": "soft_close",
+            "expected_sources": ["postgres.products"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Me preocupa que con fotos se equivoque.",
+          "ideal_assistant": "Maneja preocupacion de calidad como objecion real.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "handle_objection",
+            "micro_action": "validate_and_clarify_objection",
+            "objection_type": "fear_wrong_answers",
+            "objection_flow_step": "thank_empathize_ask_open_question",
+            "final_cta_type": "objection_question",
+            "expected_sources": ["postgres.policies", "json.objection_playbook:fear_wrong_answers"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "Si puede pedir confirmacion humana cuando no este claro, me sirve.",
+          "ideal_assistant": "Resuelve objecion y retoma Hibrido.",
+          "expected": {
+            "current_stage": "solution_recommended",
+            "macro_action": "handle_objection",
+            "micro_action": "close_or_continue_objection",
+            "objection_type": "fear_wrong_answers",
+            "objection_flow_step": "resolved",
+            "final_cta_type": "soft_question",
+            "expected_sources": ["postgres.products", "json.objection_playbook:fear_wrong_answers"],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true
+          }
+        }
+      ]
+    }
+  ]
+}

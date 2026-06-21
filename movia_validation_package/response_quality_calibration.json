@@ -1,0 +1,110 @@
+{
+  "evaluation_contract_version": "3.0",
+  "calibration_set": "response_quality_v3_phase5",
+  "date_created": "2026-06-05",
+  "rubric_dimensions": [
+    "directness",
+    "relevance",
+    "factuality",
+    "personalization",
+    "persuasiveness",
+    "naturalness",
+    "non_repetition",
+    "next_step_quality",
+    "conciseness",
+    "tone"
+  ],
+  "critical_defects": [
+    "did_not_answer_question",
+    "asked_known_information",
+    "unsupported_claim",
+    "overpromised_scope",
+    "premature_close",
+    "irrelevant_context",
+    "repetitive_question",
+    "unnatural_or_defensive_tone",
+    "poor_next_step"
+  ],
+  "examples": [
+    {
+      "id": "RQ-001",
+      "label": "excellent",
+      "user_message": "Cuanto cuesta para mi clinica dental?",
+      "response": "Para una clinica dental, el plan mas accesible es MovIA Captura: $4,900 MXN de configuracion y $450 MXN mensuales. Te conviene si necesitas responder rapido, capturar datos del paciente y ordenar prospectos antes de que recepcion los tome. ¿Hoy solo quieres responder/capturar datos o tambien necesitas agendar citas?",
+      "human_overall": 0.95,
+      "critical_defects": []
+    },
+    {
+      "id": "RQ-002",
+      "label": "acceptable",
+      "user_message": "Cuanto cuesta?",
+      "response": "MovIA Captura cuesta $4,900 MXN de configuracion y $450 MXN al mes. MovIA Hibrido cuesta $7,500 MXN de configuracion y $550 MXN al mes. ¿Que tipo de flujo quieres automatizar primero?",
+      "human_overall": 0.84,
+      "critical_defects": []
+    },
+    {
+      "id": "RQ-003",
+      "label": "weak",
+      "user_message": "Esto sirve para mi restaurante?",
+      "response": "Si, sirve. ¿Quieres empezar?",
+      "human_overall": 0.48,
+      "critical_defects": ["did_not_answer_question", "poor_next_step"]
+    },
+    {
+      "id": "RQ-004",
+      "label": "factually_correct_but_commercially_weak",
+      "user_message": "Se me hace caro.",
+      "response": "El precio oficial de MovIA Captura es $4,900 MXN y la mensualidad es $450 MXN.",
+      "human_overall": 0.55,
+      "critical_defects": ["poor_next_step"]
+    },
+    {
+      "id": "RQ-005",
+      "label": "persuasive_but_too_long",
+      "user_message": "Ya tengo alguien que responde WhatsApp.",
+      "response": "Tener alguien respondiendo ayuda, pero MovIA puede apoyar mucho porque responde rapido, ordena datos, evita que se escapen leads, mantiene consistencia, filtra prospectos, ayuda a que el equipo no repita preguntas, conserva informacion del negocio, reduce tiempos muertos, mejora seguimiento, permite que recepcion se enfoque en casos reales y puede ayudarte a crecer sin contratar mas personas. Tambien puede resolver dudas frecuentes y organizar mejor el flujo de entrada. Si quieres podemos revisar cada parte de tu operacion paso por paso para decidir que conviene automatizar primero y despues vemos el plan.",
+      "human_overall": 0.62,
+      "critical_defects": []
+    },
+    {
+      "id": "RQ-006",
+      "label": "repetitive",
+      "user_message": "Tengo una clinica dental y me escriben por WhatsApp.",
+      "response": "Perfecto. ¿Que tipo de negocio tienes? ¿Que tipo de negocio tienes?",
+      "human_overall": 0.22,
+      "critical_defects": ["asked_known_information", "repetitive_question"]
+    },
+    {
+      "id": "RQ-007",
+      "label": "wrong_next_question",
+      "user_message": "Quiero empezar.",
+      "response": "Excelente. ¿Que tipo de negocio tienes?",
+      "human_overall": 0.45,
+      "critical_defects": ["poor_next_step"]
+    },
+    {
+      "id": "RQ-008",
+      "label": "unsupported_claim",
+      "user_message": "Y si no me gusta hay reembolso?",
+      "response": "Si hay reembolso si no te gusta. Podemos probarlo y despues decides.",
+      "human_overall": 0.18,
+      "critical_defects": ["unsupported_claim"]
+    },
+    {
+      "id": "RQ-009",
+      "label": "overpromised_scope",
+      "user_message": "Captura agenda citas?",
+      "response": "Si, MovIA Captura puede agendar citas, cotizar y ejecutar acciones por ti.",
+      "human_overall": 0.20,
+      "critical_defects": ["overpromised_scope"]
+    },
+    {
+      "id": "RQ-010",
+      "label": "unnatural_or_defensive_tone",
+      "user_message": "No me convence.",
+      "response": "Como ya te dije, te conviene si o si. Si no quieres avanzar, es tu decision.",
+      "human_overall": 0.16,
+      "critical_defects": ["unnatural_or_defensive_tone"]
+    }
+  ]
+}

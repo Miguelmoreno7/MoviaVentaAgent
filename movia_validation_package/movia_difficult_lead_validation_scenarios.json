@@ -1,0 +1,1590 @@
+{
+  "evaluation_contract_version": "3.0",
+  "suite_type": "atomic_scripted",
+  "causal_continuity": false,
+  "agent_contract_version": "2.0",
+  "dataset_version": "v3.0-atomic-2026-06-05",
+  "run_mode": "scripted_replay",
+  "agent_name": "MovIA Preventa",
+  "commercial_contract_version": "2.0",
+  "channel": "WhatsApp",
+  "date_created": "2026-06-04",
+  "recommended_conversation_length": {
+    "target_user_turns": "12-15 user turns",
+    "reasoning": "B2B sales cadence references commonly mention ~8-12 touchpoints and 8-15 for B2B deals. For WhatsApp inbound from Facebook Ads, use 10-15 user turns as a realistic stress-test window, not a guaranteed close requirement.",
+    "stress_test_target": "12 user turns per scenario"
+  },
+  "evaluation_framework_recommendation": {
+    "primary": "RAGAS for RAG + agent/multi-turn evaluation, especially when validating retrieval, faithfulness, and goal-oriented multi-turn success.",
+    "secondary": "DeepEval or LangSmith can be added later for CI-style pass/fail conversational metrics, trace-aware debugging, and regression tests.",
+    "note": "Because MovIA is hybrid (Postgres + JSON + RAG + LangGraph state), do not rely only on RAG metrics. Evaluate source selection, sales policy action, policy compliance, memory consistency, and response quality."
+  },
+  "movia_ground_truth": {
+    "available_products": [
+      {
+        "slug": "movia_captura",
+        "name": "MovIA Captura",
+        "setup_mxn": 4900,
+        "monthly_mxn": 450,
+        "delivery_time": "3-5 dias habiles",
+        "status": "available"
+      },
+      {
+        "slug": "movia_hibrido",
+        "name": "MovIA Hibrido",
+        "setup_mxn": 7500,
+        "monthly_mxn": 550,
+        "delivery_time": "5-10 dias habiles",
+        "status": "available"
+      }
+    ],
+    "coming_soon_products": [
+      {
+        "slug": "movia_ventas",
+        "name": "Agente MovIA Ventas",
+        "setup_mxn": 13500,
+        "monthly_mxn": 1000,
+        "delivery_time": "aprox. 15 dias habiles",
+        "status": "coming_soon"
+      },
+      {
+        "slug": "movia_pro_comercial",
+        "name": "Agente MovIA Pro Comercial",
+        "setup_mxn": 25000,
+        "monthly_mxn": 2000,
+        "delivery_time": "aprox. 15 dias habiles",
+        "status": "coming_soon"
+      }
+    ],
+    "official_channel": "WhatsApp",
+    "upcoming_channels": [
+      "Facebook",
+      "Instagram"
+    ],
+    "app_url": "https://app.moviatech.com.mx",
+    "payment_policy": "50% deposit to start; deposit is non-refundable; remaining payment after customer approves agent; monthly starts after approval; non-payment pauses agent.",
+    "support_policy": "After deposit, customer receives personalized support with Miguel. Pre-sales bot should redirect post-purchase questions to Miguel without verifying payment."
+  },
+  "debug_fields_required": [
+    "conversation_id",
+    "turn_id",
+    "primary_intent",
+    "secondary_intents",
+    "topics",
+    "current_stage",
+    "macro_action",
+    "micro_action",
+    "objection_type",
+    "objection_flow_step",
+    "knowledge_plan.fetches",
+    "sources_used",
+    "rag_used",
+    "structured_used",
+    "json_used",
+    "final_cta_type",
+    "unsupported_claims",
+    "token_usage"
+  ],
+  "global_pass_criteria": [
+    "Does not invent prices, channels, delivery times, integrations, or refund policy.",
+    "Does not sell Facebook/Instagram as currently available.",
+    "Does not sell MovIA Ventas or Pro Comercial as available unless user accepts future/waitlist framing.",
+    "If the lead asks for actions, correctly differentiates Captura vs Hibrido.",
+    "Handles objections with thank/empathize/open question before long persuasion.",
+    "Uses Postgres for exact pricing/policies, JSON for process/playbooks, RAG for explanations/comparisons/use cases.",
+    "Maintains memory across at least 12 user turns and can reference early information later.",
+    "Every response answers the explicit question and advances one commercial micro-step."
+  ],
+  "scenarios": [
+    {
+      "conversation_id": "MOVIA-VAL-001",
+      "persona": "Lead sarcastico que desafia credibilidad",
+      "difficulty": "high",
+      "lead_profile_seed": {
+        "business_type": "clinica dental",
+        "main_channel": null,
+        "pain": "tarda en responder pacientes",
+        "tone": "sarcastic/skeptical"
+      },
+      "primary_risks": [
+        "sarcasm",
+        "trust objection",
+        "competitor comparison",
+        "pressure to overpromise"
+      ],
+      "success_goal": "No caer en defensiva; explicar valor, precios oficiales y llevarlo a identificar canal/dolor; idealmente invitar a iniciar demo o registro.",
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Vi su anuncio. A ver, convenceme rapido: seguro es otro bot que contesta tonterias, no?",
+          "ideal_assistant": "Entiendo la duda. MovIA no busca venderte un bot generico, sino un agente configurado con la informacion de tu negocio para responder leads por WhatsApp. Si tu objetivo es solo responder preguntas y filtrar interesados, normalmente empezamos con MovIA Captura. Para ubicarlo bien: que tipo de negocio tienes?",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "persuade_value",
+            "micro_action": "logical_value",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "Clinica dental. Pero no me digas que va a vender brackets solito.",
+          "ideal_assistant": "No te diria eso. Para una clinica dental, el primer valor no es que 'venda brackets solo', sino que responda rapido dudas repetidas: horarios, tratamientos, precios aproximados si ustedes los proporcionan, requisitos y captura de datos del paciente. Eso ayuda a que recepcion no pierda leads cuando esta ocupada. Tus pacientes te escriben mas por WhatsApp directo o vienen de anuncios/redes?",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "persuade_value",
+            "micro_action": "logical_value",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "rag.product_explanations.facebook_agent",
+              "rag.product_explanations.instagram_agent"
+            ],
+            "rag_used": true,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "De Facebook Ads a WhatsApp. La gente pregunta precio y luego desaparece.",
+          "ideal_assistant": "Ese caso encaja muy bien con MovIA Captura si solo necesitas responder, filtrar y redirigir a humano. El agente puede contestar preguntas frecuentes, pedir datos basicos y dejar mas claro si el lead realmente esta interesado. Si ademas quieres que agende citas o mande recordatorios, ahi ya seria MovIA Hibrido. Hoy necesitas solo responder y filtrar, o tambien agendar?",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Solo responder. Cuanto cuesta el chiste?",
+          "ideal_assistant": "Para ese caso, el plan disponible que mas encaja es MovIA Captura: $4,900 MXN de setup y $450 MXN mensuales. Se entrega normalmente en 3 a 5 dias habiles. Incluye respuestas con informacion de tu negocio, calificacion basica de leads y redireccion a humano; no agenda ni ejecuta acciones externas. Quieres que te explique como seria el proceso para iniciarlo?",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Y por que no usar ManyChat? Es mas conocido que ustedes.",
+          "ideal_assistant": "Tiene sentido compararlo. ManyChat puede servir muy bien para flujos mas armados tipo menu o automatizaciones simples. MovIA busca algo mas personalizado para responder preguntas abiertas con la informacion de tu clinica y filtrar leads sin que tengas que construir todo tu flujo. Si lo que quieres es solo botones, ManyChat podria bastar; si quieres respuestas mas adaptadas a tu negocio, MovIA tiene mas sentido. Tus preguntas de pacientes son repetitivas o llegan muy variadas?",
+          "expected": {
+            "current_stage": "comparing",
+            "macro_action": "compare_alternative",
+            "micro_action": "compare_manychat",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.source_routing_rules",
+              "rag.product_explanations.whatsapp_agent"
+            ],
+            "rag_used": true,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Variadas. Unos preguntan limpieza, otros ortodoncia, otros urgencias. Pero si contesta mal me quema.",
+          "ideal_assistant": "Esa preocupacion es valida. Por eso el agente se construye con tu informacion y se prueba antes de activarlo. Tu ves escenarios de prueba y puedes aprobarlo o pedir ajustes antes del pago final. La idea no es soltarlo sin revision, sino validar que responda como esperas. Que informacion tendrias lista para entrenarlo: catalogo, precios, tratamientos o preguntas frecuentes?",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "validate_and_clarify_objection",
+            "objection_type": "fear_wrong_answers",
+            "objection_flow_step": "thank_empathize_ask_open_question",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:fear_wrong_answers"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Tengo PDF con tratamientos y precios. Pero no quiero que prometa diagnosticos.",
+          "ideal_assistant": "Perfecto, eso se puede controlar. El agente puede usar tu PDF para informar sobre tratamientos y precios, pero se le puede indicar que no diagnostique ni prometa resultados medicos, y que redirija a valoracion cuando aplique. Ese tipo de regla es justo lo que nos conviene dejar claro en el intake y en ejemplos de conversacion. Quieres que te diga que tendrias que subir en la plataforma?",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.platform_steps"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "A ver, y si un paciente manda una foto de su diente?",
+          "ideal_assistant": "MovIA Captura puede entender imagenes cuando aplique, pero para una clinica dental debe usarse con cuidado: puede reconocer que el paciente envio una imagen y pedir datos o redirigir a valoracion, no diagnosticar. Para salud, lo correcto seria que el agente guie y capture informacion, no que sustituya criterio profesional. Te serviria mas que pida nombre, telefono, molestia y disponibilidad para valoracion?",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 9,
+          "user": "Mmm. Me sigue sonando a que luego va a fallar y nadie responde.",
+          "ideal_assistant": "Gracias por decirlo directo. La duda real aqui parece ser confianza y soporte. MovIA incluye mantenimiento mensual para mantener el agente activo y ajustes dentro del alcance, como actualizar informacion o mejorar respuestas. Despues del deposito tambien tienes seguimiento personalizado con Miguel. Que te preocuparia mas: que falle tecnicamente o que conteste algo fuera de tono?",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "validate_and_clarify_objection",
+            "objection_type": "trust_objection",
+            "objection_flow_step": "thank_empathize_ask_open_question",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:trust_objection"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 10,
+          "user": "Que conteste fuera de tono. Mi recepcionista es amable, no robotica.",
+          "ideal_assistant": "Eso es totalmente ajustable. En los ejemplos de conversacion puedes mostrar como quieres que responda: amable, breve, formal o cercano. Nosotros usamos esos ejemplos para probar el comportamiento antes de activarlo. Si tu objetivo es conservar un tono humano pero responder rapido, Captura sigue siendo buena opcion. Quieres empezar con un demo o prefieres ir directo al registro del agente?",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "compare_alternative",
+            "micro_action": "compare_human_receptionist",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.source_routing_rules",
+              "rag.comparisons.human_receptionist"
+            ],
+            "rag_used": true,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 11,
+          "user": "Dame el link, pero no prometo nada.",
+          "ideal_assistant": "Claro. Puedes iniciar en https://app.moviatech.com.mx. Entras, te registras, eliges customer/cliente y despues Crear agente. Para tu caso seleccionaria MovIA Captura. Ahi podras dejar objetivo, informacion de tu clinica, documentos PDF y ejemplos de conversacion. El deposito es del 50% para empezar el proyecto.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "clarify_objection_value",
+            "objection_type": "none",
+            "objection_flow_step": "clarify_value",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:trust_objection"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 12,
+          "user": "Ok, si desde el mensaje 2 te dije clinica dental, no me vuelvas a preguntar eso despues.",
+          "ideal_assistant": "Correcto, lo tengo presente: es para una clinica dental y el caso viene de Facebook Ads a WhatsApp. Por eso la recomendacion sigue siendo MovIA Captura si solo necesitas responder y filtrar leads. En el registro, lo mas importante sera subir el PDF de tratamientos/precios y ejemplos de tono para que el agente responda como tu recepcionista.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "tie_solution_to_objection",
+            "objection_type": "none",
+            "objection_flow_step": "tie_solution",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:trust_objection",
+              "rag.faqs.pre_purchase_faq",
+              "rag.overview",
+              "rag.product_explanations.facebook_agent",
+              "rag.product_explanations.instagram_agent",
+              "rag.product_explanations.whatsapp_agent"
+            ],
+            "rag_used": true,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        }
+      ]
+    },
+    {
+      "conversation_id": "MOVIA-VAL-002",
+      "persona": "Lead que cambia de tema para probar memoria y consistencia",
+      "difficulty": "high",
+      "lead_profile_seed": {
+        "business_type": "barberia",
+        "main_channel": "WhatsApp",
+        "pain": "mensajes despues de horario",
+        "tone": "distracted/testing"
+      },
+      "primary_risks": [
+        "topic switching",
+        "memory consistency",
+        "scope drift",
+        "availability hallucination"
+      ],
+      "success_goal": "Mantener contexto de barberia/WhatsApp, responder cambios de tema sin perder hilo y cerrar hacia MovIA Captura.",
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Tengo una barberia y me llegan mensajes despues de las 9 pm por WhatsApp.",
+          "ideal_assistant": "Para una barberia, ese caso encaja muy bien con MovIA Captura si el objetivo es responder dudas fuera de horario, precios, ubicacion, horarios y filtrar interesados. Si quieres que tambien agende citas, entonces seria MovIA Hibrido. Hoy solo quieres responder o tambien agendar?",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_channel_then_discover_main_channel",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "rag.faqs.pre_purchase_faq",
+              "rag.overview",
+              "rag.product_explanations.facebook_agent",
+              "rag.product_explanations.instagram_agent",
+              "rag.product_explanations.whatsapp_agent"
+            ],
+            "rag_used": true,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "Solo responder por ahora. Luego vemos agenda.",
+          "ideal_assistant": "Entonces empezaria con MovIA Captura. Te ayuda a contestar preguntas repetidas y capturar datos del interesado sin ejecutar acciones externas. Si despues quieres agendar, se puede evaluar pasar a Hibrido. Cuantas preguntas al dia recibes mas o menos por WhatsApp?",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Unas 20. Oye y ustedes hacen paginas web?",
+          "ideal_assistant": "Podemos hablarlo aparte, pero el enfoque principal de MovIA aqui son agentes por WhatsApp. Para tu barberia, lo importante seria que el agente responda a esos 20 mensajes diarios y no se pierdan cuando ya cerraste. Regresando al agente: que suelen preguntar mas, precios, horarios o ubicacion?",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "explain_process",
+            "micro_action": "explain_app_registration",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.official_links",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.platform_steps"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "explain_next_step"
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Precios y horarios. Pero tambien me preguntan si hay promo de corte y barba.",
+          "ideal_assistant": "Perfecto. Eso se puede cargar como informacion del negocio para que el agente responda precios, horarios y promociones vigentes. Si la promocion cambia, tambien se puede actualizar dentro del soporte mensual. Esto sigue siendo Captura porque solo responde y filtra. Tienes esos precios en PDF o en algun documento?",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "No, los tengo en una imagen del menu pegada en la pared.",
+          "ideal_assistant": "Tambien puede servir como referencia inicial si se interpreta la imagen, pero para construirlo bien conviene pasar precios y promociones a PDF o texto claro. Asi reducimos errores. En la app podras subir PDF y agregar notas del negocio. Quieres que te explique los pasos?",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Cambiando de tema, Facebook e Instagram ya funcionan?",
+          "ideal_assistant": "Actualmente el canal disponible oficialmente es WhatsApp. Facebook e Instagram estan en camino, pero no te los venderia como disponibles todavia. Para tu caso, como ya dijiste que los mensajes llegan por WhatsApp, podemos arrancar por ahi sin problema.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_channel_then_discover_main_channel",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Ok, cuanto era el plan que me recomendaste?",
+          "ideal_assistant": "Para tu barberia te recomende MovIA Captura. Cuesta $4,900 MXN de setup y $450 MXN mensuales, con entrega estimada de 3 a 5 dias habiles. Aplica porque por ahora solo quieres responder y filtrar mensajes, no agendar automaticamente.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "Y si manana quiero que agende, no me vas a querer cobrar todo otra vez?",
+          "ideal_assistant": "Si el alcance cambia a agendar, ya no seria Captura; tendriamos que evaluar pasarlo a Hibrido porque ahi el agente ejecuta acciones. No te diria que es 'todo otra vez', pero si seria una cotizacion o ajuste de alcance segun lo que se necesite conectar. Para iniciar barato y validar, Captura puede ser el primer paso.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 9,
+          "user": "Entonces mejor dame Hibrido de una vez, pero al precio de Captura.",
+          "ideal_assistant": "Entiendo por que lo pedirias, pero no seria correcto ofrecer Hibrido al precio de Captura porque Hibrido ya incluye acciones y posible integracion con procesos externos. Captura responde y filtra; Hibrido puede ejecutar hasta 2 acciones. Si tu prioridad hoy es costo, arrancaria con Captura y dejaria agenda para una segunda etapa.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 10,
+          "user": "A ver si entendiste: que negocio tengo?",
+          "ideal_assistant": "Tienes una barberia. Me comentaste que recibes unos 20 mensajes diarios por WhatsApp despues de horario, principalmente sobre precios, horarios y promociones como corte y barba.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 11,
+          "user": "Bien. Mandame donde empiezo.",
+          "ideal_assistant": "Puedes empezar en https://app.moviatech.com.mx. Te registras, eliges customer/cliente y seleccionas Crear agente. Para tu caso, elige MovIA Captura si quieres responder y filtrar por WhatsApp sin agenda automatica. Recuerda que para iniciar se paga el 50% de deposito.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 12,
+          "user": "Y el demo ese de 10 mensajes me sirve antes?",
+          "ideal_assistant": "Si, el demo te puede servir para entender como se configura un agente y probar hasta 10 mensajes. Solo ten en cuenta que es una prueba, no el agente final de tu barberia. Si despues te convence, creas el agente y completas la informacion real del negocio.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        }
+      ]
+    },
+    {
+      "conversation_id": "MOVIA-VAL-003",
+      "persona": "Lead que prueba politicas, reembolsos y soporte",
+      "difficulty": "very_high",
+      "lead_profile_seed": {
+        "business_type": "fumigacion",
+        "main_channel": "WhatsApp",
+        "pain": "cotizaciones y dudas repetidas",
+        "tone": "legalistic/distrustful"
+      },
+      "primary_risks": [
+        "refund hallucination",
+        "support overpromise",
+        "policy conflict",
+        "post-purchase confusion"
+      ],
+      "success_goal": "Mantener politicas firmes: deposito 50%, no reembolso, mensualidad, soporte limitado, tokens incluidos con limite razonable.",
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Tengo un negocio de fumigacion. Antes de hablar, quiero saber si me devuelven el dinero si no me gusta.",
+          "ideal_assistant": "Te lo digo claro: el deposito no es reembolsable. MovIA trabaja con un deposito del 50% para iniciar, y despues se hacen pruebas y revision para que puedas aprobar o pedir ajustes antes del pago final. Si quieres, te explico primero como se reduce el riesgo antes de pagar el restante.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "Eso suena mal. O sea pago y si no sirve ya perdi.",
+          "ideal_assistant": "Entiendo como puede sonar. La razon es que el deposito activa trabajo personalizado: revisar tu informacion, construir el agente y probarlo. Lo que si hacemos para protegerte es que antes del pago final ves escenarios de prueba y puedes pedir ajustes. El objetivo es que apruebes cuando el agente ya responde conforme a lo solicitado.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Y cuantos ajustes incluye? No quiero que luego todo me lo cobren.",
+          "ideal_assistant": "Dentro del alcance del agente, los ajustes de informacion y comportamiento se contemplan: por ejemplo actualizar respuestas, precios, servicios o forma de contestar. Lo que si se cotiza aparte son features nuevas o cambiar el tipo de agente, como pasar de solo responder a agendar o conectar sistemas externos.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Entonces si quiero que cotice fumigacion por metros cuadrados, entra o no?",
+          "ideal_assistant": "Depende de la complejidad. Si solo responde rangos o explica el proceso, podria ser Captura. Si debe calcular una cotizacion con reglas, registrar datos o ejecutar una accion, seria MovIA Hibrido. Para fumigacion, si quieres que pida metros, tipo de plaga y zona para generar una cotizacion simple, probablemente hablamos de Hibrido.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Cuanto cuesta ese entonces?",
+          "ideal_assistant": "MovIA Hibrido cuesta $7,500 MXN de setup y $550 MXN mensuales. Incluye todo lo de Captura y hasta 2 acciones acordadas, como cotizar de forma simple o registrar solicitudes, siempre que el alcance quede bien definido.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Y si no pago la mensualidad un mes?",
+          "ideal_assistant": "Si no se paga la mensualidad, el agente se pausa. Cuando se regulariza el pago, puede volver a activarse. La mensualidad cubre mantenimiento, infraestructura, recursos computacionales y ajustes dentro del alcance.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Y si me escribe mucha gente? Me van a cobrar tokens escondidos?",
+          "ideal_assistant": "El uso de tokens/API viene incluido en la mensualidad hasta un limite razonable. Si el uso se vuelve muy alto, MovIA te avisaria antes de ajustar o cobrar algo adicional. No deberia manejarse como cargo escondido. Aun falta definir publicamente un limite exacto, asi que no te inventaria una cifra.",
+          "expected": {
+            "current_stage": "discovery",
+            "macro_action": "discover_need",
+            "micro_action": "ask_business_type",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "No me gusta eso de limite razonable. Suena ambiguo.",
+          "ideal_assistant": "Tienes razon en pedir claridad. Hoy la politica confirmada es que el uso normal esta incluido y que, si hubiera consumo extraordinario, se te avisaria antes de cualquier ajuste. No tenemos una cifra publica cerrada para darte en este momento, por eso prefiero no inventarla. Si tu volumen es alto, conviene revisarlo con Miguel antes de contratar.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 9,
+          "user": "Y llamadas? Quiero que el bot llame al cliente.",
+          "ideal_assistant": "Por ahora no incluimos llamadas. MovIA puede responder, guiar, calificar y en Hibrido ejecutar acciones acordadas como agendar o registrar informacion, pero llamadas no forman parte del alcance. Si tu proceso requiere llamada, lo correcto seria que el agente capture datos y redirija a humano.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 10,
+          "user": "Ok, pero despues de pagar quiero tu WhatsApp personal desde el dia uno.",
+          "ideal_assistant": "Despues del deposito recibes seguimiento personalizado con Miguel para el proyecto. Antes del deposito, este canal te puede orientar en preventa y proceso. El deposito es justo lo que activa el trabajo personalizado y el seguimiento directo.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "validate_and_clarify_objection",
+            "objection_type": "support_concern",
+            "objection_flow_step": "thank_empathize_ask_open_question",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:support_concern"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 11,
+          "user": "Mandame link. Pero si no me gusta voy a reclamar.",
+          "ideal_assistant": "Te paso el link: https://app.moviatech.com.mx. Solo para dejarlo claro antes de avanzar: el deposito del 50% no es reembolsable, pero antes del pago final veras pruebas del agente y podras pedir ajustes dentro del alcance. Para tu caso de fumigacion con posible cotizacion, revisaria MovIA Hibrido.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "clarify_objection_value",
+            "objection_type": "none",
+            "objection_flow_step": "clarify_value",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:support_concern"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 12,
+          "user": "Si ya pague despues te escribo por aqui?",
+          "ideal_assistant": "Si ya realizaste el deposito o ya estas en proceso, Miguel te dara seguimiento personalizado. Este agente puede orientarte, pero los temas especificos del proyecto se revisan directamente con Miguel para evitar confusiones.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handoff_to_miguel",
+            "micro_action": "redirect_post_purchase",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.post_purchase_handoff"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "redirect_to_miguel"
+          }
+        }
+      ]
+    },
+    {
+      "conversation_id": "MOVIA-VAL-004",
+      "persona": "Lead que intenta meter acciones complejas en Captura",
+      "difficulty": "high",
+      "lead_profile_seed": {
+        "business_type": "proveedores / garantias",
+        "main_channel": "WhatsApp",
+        "pain": "proveedores mandan tickets, fotos y datos",
+        "tone": "practical but scope-pushing"
+      },
+      "primary_risks": [
+        "wrong product recommendation",
+        "underpricing",
+        "scope creep",
+        "API/action confusion"
+      ],
+      "success_goal": "Detectar que requiere Hibrido, explicar que Captura no hace acciones y proteger alcance.",
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Tengo proveedores que mandan ticket de compra, foto del detalle y datos de garantia por WhatsApp. Quiero automatizar eso.",
+          "ideal_assistant": "Ese caso suena mas a MovIA Hibrido que a Captura, porque no solo quieres responder dudas: quieres procesar informacion, posiblemente registrar datos y seguir un flujo. Captura sirve para responder y filtrar; Hibrido permite hasta 2 acciones acordadas. Que acciones exactas quieres que haga con esos tickets y fotos?",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "Que revise el ticket, extraiga datos y los suba a mi panel.",
+          "ideal_assistant": "Eso ya implica una accion externa: extraer datos y subirlos a un panel. Por alcance, no seria MovIA Captura. Tendriamos que evaluarlo como Hibrido, siempre que sea posible conectarnos al panel o definir una forma segura de registrar la informacion.",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Pero solo son dos cosas, ticket y foto. Cobrame Captura.",
+          "ideal_assistant": "Entiendo la idea, pero la diferencia no es la cantidad de archivos, sino que el agente tendria que ejecutar una accion: subir o registrar datos en un sistema. Captura puede entender y responder; Hibrido puede ejecutar hasta 2 acciones acordadas. Para no prometer algo incorrecto, lo pondria como Hibrido.",
+          "expected": {
+            "current_stage": "qualified",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Cuanto seria Hibrido?",
+          "ideal_assistant": "MovIA Hibrido cuesta $7,500 MXN de setup y $550 MXN mensuales. La entrega estimada es de 5 a 10 dias habiles, dependiendo de que tan clara este la accion y la conexion necesaria. Incluye hasta 2 acciones acordadas.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Y si mi panel no tiene API?",
+          "ideal_assistant": "Si tu panel no tiene API, hay que revisar alternativas. Puede que no sea viable automatizarlo directo o que se necesite otro mecanismo. No te prometeria integracion sin revisar el sistema. En ese caso, Hibrido requiere evaluacion tecnica antes de cerrar alcance.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Bueno, entonces que solo responda a proveedores y me mande resumen.",
+          "ideal_assistant": "Si solo responde a proveedores, pide datos y te redirige o resume informacion sin subirla al panel, eso podria acercarse mas a Captura. La clave es: Captura no ejecuta acciones externas. Si el resultado es solo respuesta, captura y redireccion humana, podria funcionar. Quieres que el humano sea quien registre el dato final?",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Si, que el humano lo registre. El bot solo ordena la info.",
+          "ideal_assistant": "Entonces Captura podria ser suficiente: responderia, pediria ticket/foto/datos necesarios y redirigiria a humano con la informacion ordenada. No subiria datos al panel ni ejecutaria acciones. Captura cuesta $4,900 MXN de setup y $450 MXN mensuales.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "Ahi si. Y puede leer audio?",
+          "ideal_assistant": "Si, MovIA Captura puede entender audio cuando aplique, ademas de texto e imagenes. Para tu caso, convendria definir que datos debe extraer o pedir al proveedor para que el resumen llegue ordenado al humano.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 9,
+          "user": "Que pida numero de ticket, fecha, proveedor y foto.",
+          "ideal_assistant": "Perfecto. Ese es un flujo de captura claro: numero de ticket, fecha, proveedor y foto. Mientras el agente solo recopile y redirija a humano, sigue dentro de Captura. Si despues quieres que lo suba automaticamente al panel, ahi se moveria a Hibrido.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "narrow_solution",
+            "micro_action": "determine_if_external_actions_are_needed",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "discovery_question"
+          }
+        },
+        {
+          "turn_id": 10,
+          "user": "Ok, cuanto pago para empezar?",
+          "ideal_assistant": "Para MovIA Captura, el setup es de $4,900 MXN. Para iniciar se paga el 50% de deposito, es decir $2,450 MXN. El resto se paga cuando apruebes el agente despues de la revision. La mensualidad es de $450 MXN y empieza cuando apruebas el agente.",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 11,
+          "user": "Va, mandame link.",
+          "ideal_assistant": "Claro: https://app.moviatech.com.mx. Registrate, elige customer/cliente y selecciona Crear agente. En tu caso elegiria MovIA Captura y describiria que el agente debe recopilar numero de ticket, fecha, proveedor y foto, y redirigir a humano sin subir datos al panel.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 12,
+          "user": "Si luego quiero que suba datos al panel, que pasa?",
+          "ideal_assistant": "Eso ya seria una accion externa y tendria que evaluarse como MovIA Hibrido o como ajuste de alcance. Lo importante es que Captura te puede ayudar a ordenar y redirigir; Hibrido seria para automatizar acciones como registrar en tu panel.",
+          "expected": {
+            "current_stage": "unknown_recovery",
+            "macro_action": "answer_unknown_safely",
+            "micro_action": "ask_single_clarifying_question",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": false,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        }
+      ]
+    },
+    {
+      "conversation_id": "MOVIA-VAL-005",
+      "persona": "Lead agresivo, bajo presupuesto, quiere prueba gratis y compara con hacerlo solo",
+      "difficulty": "very_high",
+      "lead_profile_seed": {
+        "business_type": "estetica",
+        "main_channel": "WhatsApp",
+        "pain": "responder precios y disponibilidad",
+        "tone": "aggressive/budget-sensitive"
+      },
+      "primary_risks": [
+        "price objection",
+        "free trial pressure",
+        "discount pressure",
+        "tone escalation",
+        "unsupported promises"
+      ],
+      "success_goal": "Mantener tono calmado, no regalar, no prometer trial ilimitado, sugerir demo de 10 mensajes y cerrar a Captura si encaja.",
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Cuanto cuesta? No tengo tiempo para rollos.",
+          "ideal_assistant": "Claro. El plan disponible mas economico es MovIA Captura: $4,900 MXN de setup y $450 MXN mensuales. Sirve para responder dudas, calificar leads y redirigir a humano por WhatsApp, sin ejecutar acciones como agendar. Para decirte si te conviene: que tipo de negocio tienes?",
+          "expected": {
+            "current_stage": "educating",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 2,
+          "user": "Estetica. Y se me hace caro para un bot.",
+          "ideal_assistant": "Te entiendo, gracias por decirlo directo. Para ubicarlo bien: se te hace caro por el pago inicial o porque todavia no ves claro cuanto te puede ahorrar en tiempo o leads perdidos?",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "validate_and_clarify_objection",
+            "objection_type": "price_objection",
+            "objection_flow_step": "thank_empathize_ask_open_question",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:price_objection"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 3,
+          "user": "Por las dos. Yo puedo poner respuestas rapidas en WhatsApp gratis.",
+          "ideal_assistant": "Si solo necesitas respuestas manuales guardadas, WhatsApp Business puede ayudarte. La diferencia es que MovIA responde automaticamente, usa la informacion de tu negocio, captura datos y filtra interesados cuando no puedes contestar. Para una estetica, eso ayuda si te preguntan precios, horarios, servicios o disponibilidad mientras estas atendiendo. Cuantos mensajes al dia recibes mas o menos?",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "validate_and_clarify_objection",
+            "objection_type": "already_use_whatsapp_business",
+            "objection_flow_step": "thank_empathize_ask_open_question",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:already_use_whatsapp_business"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 4,
+          "user": "Unos 30, pero muchos solo preguntan precio y no compran.",
+          "ideal_assistant": "Justo ahi puede aportar: no todos van a comprar, pero el agente puede responder rapido, pedir datos basicos y ayudarte a separar curiosos de interesados reales. Asi tu equipo no pierde tanto tiempo repitiendo lo mismo. Si no necesitas agenda automatica, Captura seria el punto de entrada.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 5,
+          "user": "Dame prueba gratis sin deposito y si funciona pago.",
+          "ideal_assistant": "No manejamos desarrollo personalizado sin deposito. Lo que si existe es crear un demo limitado de 10 mensajes para que entiendas como funciona la configuracion. Para construir un agente con tu informacion real, el inicio requiere el deposito del 50%.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "validate_and_clarify_objection",
+            "objection_type": "wants_free_trial",
+            "objection_flow_step": "thank_empathize_ask_open_question",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:wants_free_trial"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 6,
+          "user": "Entonces no confias en tu producto.",
+          "ideal_assistant": "Si confiamos, pero tambien cuidamos el tiempo de configuracion personalizada. Crear un agente real implica revisar informacion, cargar datos, probar respuestas y ajustar. Por eso el demo sirve para conocer la idea, y el deposito activa el trabajo personalizado.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "clarify_objection_value",
+            "objection_type": "none",
+            "objection_flow_step": "clarify_value",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:wants_free_trial"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 7,
+          "user": "Y si te paso mi Instagram?",
+          "ideal_assistant": "Actualmente el canal disponible oficialmente es WhatsApp. Instagram esta en camino, pero no te lo venderia como disponible todavia. Si tus clientas terminan escribiendo por WhatsApp, podemos arrancar ahi.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_channel_then_discover_main_channel",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 8,
+          "user": "Ok, WhatsApp. Pero quiero que agende citas tambien.",
+          "ideal_assistant": "Si quieres que agende citas, ya no seria Captura. Eso entra en MovIA Hibrido porque implica una accion. Hibrido cuesta $7,500 MXN de setup y $550 MXN mensuales, e incluye hasta 2 acciones acordadas, como agendar o mandar recordatorios.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_channel_then_discover_main_channel",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 9,
+          "user": "No, eso ya se fue caro. Entonces solo que responda precios.",
+          "ideal_assistant": "Perfecto, entonces volvemos a MovIA Captura. Para tu estetica responderia precios, servicios, horarios y preguntas frecuentes, y puede pedir datos para que una persona cierre la cita. Setup $4,900 MXN, mensualidad $450 MXN.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "validate_and_clarify_objection",
+            "objection_type": "price_objection",
+            "objection_flow_step": "thank_empathize_ask_open_question",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:price_objection"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 10,
+          "user": "Que pasa si en un mes cambio precios?",
+          "ideal_assistant": "Eso entra dentro de ajustes de informacion. La mensualidad contempla mantenimiento y actualizaciones dentro del alcance, como cambiar precios, respuestas o informacion del negocio. No seria una feature nueva mientras siga siendo el mismo agente de respuesta.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        },
+        {
+          "turn_id": 11,
+          "user": "Ok. Me convenciste a medias. Donde veo eso?",
+          "ideal_assistant": "Puedes verlo e iniciar en https://app.moviatech.com.mx. Registrate, elige customer/cliente y puedes crear un demo de 10 mensajes o crear directamente el agente. Para tu caso, seleccionaria MovIA Captura si solo quieres responder precios y dudas por WhatsApp.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "handle_objection",
+            "micro_action": "clarify_objection_value",
+            "objection_type": "none",
+            "objection_flow_step": "clarify_value",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions",
+              "json.objection_playbook:price_objection"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "objection_question"
+          }
+        },
+        {
+          "turn_id": 12,
+          "user": "Si lo pruebo y me arrepiento del deposito?",
+          "ideal_assistant": "Antes de que avances, es importante que quede claro: el deposito del 50% no es reembolsable. Ese pago inicia el trabajo personalizado. Lo que si tienes es revision del agente y posibilidad de pedir ajustes antes del pago final.",
+          "expected": {
+            "current_stage": "objection_handling",
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "objection_type": "none",
+            "objection_flow_step": "none",
+            "expected_sources": [
+              "postgres.products",
+              "postgres.policies",
+              "json.tone_rules",
+              "json.cta_rules",
+              "json.sales_actions"
+            ],
+            "rag_used": false,
+            "structured_used": true,
+            "json_used": true,
+            "final_cta_type": "soft_question"
+          }
+        }
+      ]
+    }
+  ],
+  "ragas_mapping_notes": {
+    "recommended_usage": "Use each conversation as a multi-turn test case. Run the actual MovIA agent turn by turn, capture outputs and debug trace, then score against expected_state and criteria.",
+    "ragas_metrics_to_consider": [
+      "AspectCritic for multi-turn success criteria",
+      "AgentGoalAccuracy for goal completion where available",
+      "ToolCallAccuracy or custom source_selection_accuracy for expected Postgres/JSON/RAG fetches",
+      "Faithfulness and ResponseRelevancy for turns that use RAG",
+      "ContextPrecision/ContextRecall for RAG retrieval turns"
+    ],
+    "custom_metrics_needed": [
+      "commercial_accuracy",
+      "policy_compliance",
+      "sales_progression",
+      "memory_consistency",
+      "scope_control",
+      "objection_methodology_compliance",
+      "unsupported_claim_rate"
+    ],
+    "sample_eval_record_shape": {
+      "conversation_id": "MOVIA-VAL-001",
+      "turn_id": 5,
+      "user_input": "Y por que no usar ManyChat?",
+      "agent_output": "<actual output from MovIA agent>",
+      "retrieved_contexts": [
+        "<RAG chunks if any>"
+      ],
+      "debug_trace": {
+        "macro_action": "compare_alternative",
+        "micro_action": "compare_manychat",
+        "sources_used": [
+          "rag.comparisons.manychat"
+        ]
+      },
+      "expected": {
+        "macro_action": "compare_alternative",
+        "must_not_claim": [
+          "ManyChat is bad",
+          "MovIA supports Instagram now"
+        ]
+      }
+    }
+  }
+}

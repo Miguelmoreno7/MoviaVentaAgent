@@ -1,0 +1,528 @@
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import logging
+import time
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Protocol
+
+from movia_sales_agent.agent.graph import MoviaSalesAgent
+from movia_sales_agent.config.settings import Settings
+from movia_sales_agent.platform.observability import (
+    PlatformObservabilityService,
+    batch_input_json,
+    extract_total_tokens,
+    response_output_json,
+)
+from movia_sales_agent.whatsapp.client import WhatsAppClient, WhatsAppMessage
+
+
+logger = logging.getLogger(__name__)
+
+DEDUP_TTL_SECONDS = 60 * 60 * 24 * 7
+LEAD_LOCK_TTL_SECONDS = 120
+
+
+@dataclass(frozen=True)
+class QueuedWhatsAppMessage:
+    message_id: str
+    from_number: str
+    text: str
+    channel: str = "whatsapp"
+
+    @property
+    def lead_key(self) -> str:
+        digest = hashlib.sha256(f"{self.channel}:{self.from_number}".encode("utf-8")).hexdigest()
+        return digest
+
+
+class WhatsAppQueue(Protocol):
+    durable: bool
+
+    async def enqueue(self, message: QueuedWhatsAppMessage) -> str:
+        ...
+
+    async def next_lead(self, timeout_seconds: int = 1) -> Optional[QueuedWhatsAppMessage]:
+        ...
+
+    async def collect_batch(self, lead: QueuedWhatsAppMessage) -> List[QueuedWhatsAppMessage]:
+        ...
+
+    async def acquire_lead_lock(self, lead: QueuedWhatsAppMessage) -> bool:
+        ...
+
+    async def release_lead_lock(self, lead: QueuedWhatsAppMessage) -> None:
+        ...
+
+    async def reschedule(self, lead: QueuedWhatsAppMessage) -> None:
+        ...
+
+
+class InMemoryWhatsAppQueue:
+    durable = False
+
+    def __init__(self) -> None:
+        self._dedupe: set[str] = set()
+        self._buffers: Dict[str, List[QueuedWhatsAppMessage]] = {}
+        self._scheduled: set[str] = set()
+        self._locks: set[str] = set()
+        self._lead_queue: asyncio.Queue[QueuedWhatsAppMessage] = asyncio.Queue()
+        self._mutex = asyncio.Lock()
+
+    async def enqueue(self, message: QueuedWhatsAppMessage) -> str:
+        async with self._mutex:
+            if message.message_id in self._dedupe:
+                return "duplicate"
+            self._dedupe.add(message.message_id)
+            self._buffers.setdefault(message.lead_key, []).append(message)
+            if message.lead_key not in self._scheduled:
+                self._scheduled.add(message.lead_key)
+                await self._lead_queue.put(message)
+        return "queued"
+
+    async def next_lead(self, timeout_seconds: int = 1) -> Optional[QueuedWhatsAppMessage]:
+        try:
+            return await asyncio.wait_for(self._lead_queue.get(), timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            return None
+
+    async def collect_batch(self, lead: QueuedWhatsAppMessage) -> List[QueuedWhatsAppMessage]:
+        async with self._mutex:
+            messages = self._buffers.pop(lead.lead_key, [])
+            self._scheduled.discard(lead.lead_key)
+            return messages
+
+    async def acquire_lead_lock(self, lead: QueuedWhatsAppMessage) -> bool:
+        async with self._mutex:
+            if lead.lead_key in self._locks:
+                return False
+            self._locks.add(lead.lead_key)
+            return True
+
+    async def release_lead_lock(self, lead: QueuedWhatsAppMessage) -> None:
+        async with self._mutex:
+            self._locks.discard(lead.lead_key)
+
+    async def reschedule(self, lead: QueuedWhatsAppMessage) -> None:
+        async with self._mutex:
+            if lead.lead_key not in self._scheduled:
+                self._scheduled.add(lead.lead_key)
+                await self._lead_queue.put(lead)
+
+
+class RedisWhatsAppQueue:
+    durable = True
+
+    def __init__(self, redis_url: str):
+        import redis
+
+        self._redis = redis.from_url(redis_url, decode_responses=True)
+        self._stream = "movia:whatsapp:lead_jobs"
+        self._group = "movia-agent"
+        self._consumer = f"worker-{int(time.time() * 1000)}"
+        try:
+            self._redis.xgroup_create(self._stream, self._group, id="0", mkstream=True)
+        except Exception as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
+
+    async def enqueue(self, message: QueuedWhatsAppMessage) -> str:
+        return await asyncio.to_thread(self._enqueue_sync, message)
+
+    def _enqueue_sync(self, message: QueuedWhatsAppMessage) -> str:
+        dedupe_key = f"movia:whatsapp:message:{message.message_id}"
+        if not self._redis.set(dedupe_key, "1", nx=True, ex=DEDUP_TTL_SECONDS):
+            return "duplicate"
+        lead_payload = {
+            "message_id": message.message_id,
+            "from_number": message.from_number,
+            "text": message.text,
+            "channel": message.channel,
+        }
+        self._redis.rpush(
+            f"movia:whatsapp:lead:{message.lead_key}:messages",
+            json.dumps(lead_payload, ensure_ascii=False),
+        )
+        scheduled_key = f"movia:whatsapp:lead:{message.lead_key}:scheduled"
+        if self._redis.set(scheduled_key, "1", nx=True, ex=LEAD_LOCK_TTL_SECONDS):
+            self._redis.xadd(
+                self._stream,
+                {
+                    "lead_key": message.lead_key,
+                    "from_number": message.from_number,
+                    "channel": message.channel,
+                },
+            )
+        return "queued"
+
+    async def next_lead(self, timeout_seconds: int = 1) -> Optional[QueuedWhatsAppMessage]:
+        return await asyncio.to_thread(self._next_lead_sync, timeout_seconds)
+
+    def _next_lead_sync(self, timeout_seconds: int) -> Optional[QueuedWhatsAppMessage]:
+        rows = self._redis.xreadgroup(
+            self._group,
+            self._consumer,
+            {self._stream: ">"},
+            count=1,
+            block=max(1, timeout_seconds * 1000),
+        )
+        if not rows:
+            return None
+        _stream_name, entries = rows[0]
+        entry_id, fields = entries[0]
+        self._redis.xack(self._stream, self._group, entry_id)
+        return QueuedWhatsAppMessage(
+            message_id=f"lead-job:{entry_id}",
+            from_number=fields["from_number"],
+            text="",
+            channel=fields.get("channel") or "whatsapp",
+        )
+
+    async def collect_batch(self, lead: QueuedWhatsAppMessage) -> List[QueuedWhatsAppMessage]:
+        return await asyncio.to_thread(self._collect_batch_sync, lead)
+
+    def _collect_batch_sync(self, lead: QueuedWhatsAppMessage) -> List[QueuedWhatsAppMessage]:
+        messages_key = f"movia:whatsapp:lead:{lead.lead_key}:messages"
+        rows = self._redis.lrange(messages_key, 0, -1)
+        self._redis.delete(messages_key)
+        self._redis.delete(f"movia:whatsapp:lead:{lead.lead_key}:scheduled")
+        messages = []
+        for row in rows:
+            payload = json.loads(row)
+            messages.append(
+                QueuedWhatsAppMessage(
+                    message_id=payload["message_id"],
+                    from_number=payload["from_number"],
+                    text=payload["text"],
+                    channel=payload.get("channel") or "whatsapp",
+                )
+            )
+        return messages
+
+    async def acquire_lead_lock(self, lead: QueuedWhatsAppMessage) -> bool:
+        return await asyncio.to_thread(
+            self._redis.set,
+            f"movia:whatsapp:lead:{lead.lead_key}:lock",
+            "1",
+            nx=True,
+            ex=LEAD_LOCK_TTL_SECONDS,
+        )
+
+    async def release_lead_lock(self, lead: QueuedWhatsAppMessage) -> None:
+        await asyncio.to_thread(self._redis.delete, f"movia:whatsapp:lead:{lead.lead_key}:lock")
+
+    async def reschedule(self, lead: QueuedWhatsAppMessage) -> None:
+        await asyncio.to_thread(
+            self._redis.xadd,
+            self._stream,
+            {
+                "lead_key": lead.lead_key,
+                "from_number": lead.from_number,
+                "channel": lead.channel,
+            },
+        )
+
+
+class WhatsAppWorkerManager:
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        agent: MoviaSalesAgent,
+        client: WhatsAppClient,
+        queue: Optional[WhatsAppQueue] = None,
+        observability: Optional[PlatformObservabilityService] = None,
+    ) -> None:
+        self.settings = settings
+        self.agent = agent
+        self.client = client
+        self.queue = queue or build_queue(settings)
+        self.observability = observability or PlatformObservabilityService.from_settings(
+            settings,
+            memory=getattr(agent, "memory", None),
+        )
+        self._tasks: List[asyncio.Task] = []
+        self._stopping = asyncio.Event()
+
+    @property
+    def durable(self) -> bool:
+        return self.queue.durable
+
+    async def start(self) -> None:
+        if self._tasks:
+            return
+        self._stopping.clear()
+        concurrency = max(1, int(self.settings.job_concurrency or 1))
+        self._tasks = [
+            asyncio.create_task(self._worker_loop(index), name=f"movia-whatsapp-worker-{index}")
+            for index in range(concurrency)
+        ]
+
+    async def stop(self) -> None:
+        self._stopping.set()
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks = []
+
+    async def enqueue(self, message: WhatsAppMessage) -> str:
+        queued = QueuedWhatsAppMessage(
+            message_id=message.message_id,
+            from_number=message.from_number,
+            text=message.text,
+        )
+        return await self.queue.enqueue(queued)
+
+    async def _worker_loop(self, index: int) -> None:
+        while not self._stopping.is_set():
+            lead = await self.queue.next_lead(timeout_seconds=1)
+            if lead is None:
+                continue
+            acquired = await self.queue.acquire_lead_lock(lead)
+            if not acquired:
+                await asyncio.sleep(0.5)
+                await self.queue.reschedule(lead)
+                continue
+            try:
+                self._record_queue_event(
+                    "batch_window_started",
+                    "Batch window started for WhatsApp lead.",
+                    {"from_number": lead.from_number, "channel": lead.channel},
+                )
+                await asyncio.sleep(max(0.0, float(self.settings.lead_batch_window_seconds or 0.0)))
+                batch = await self.queue.collect_batch(lead)
+                if not batch:
+                    continue
+                await asyncio.to_thread(self._process_batch_sync, batch)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("WhatsApp worker %s failed to process lead batch", index)
+            finally:
+                await self.queue.release_lead_lock(lead)
+
+    def _process_batch_sync(self, batch: List[QueuedWhatsAppMessage]) -> None:
+        first = batch[0]
+        combined_text = combine_messages(batch)
+        external_message_id = batch[0].message_id if len(batch) == 1 else "batch:" + batch[0].message_id
+        input_json = batch_input_json(
+            from_number=first.from_number,
+            channel=first.channel,
+            message_ids=[message.message_id for message in batch],
+            batch_count=len(batch),
+        )
+        runtime = None
+        run_id = None
+        if self.observability:
+            runtime, warning = self.observability.resolve_runtime()
+            if warning and not runtime:
+                logger.warning("Skipping agent run because platform runtime could not be resolved")
+                return
+            if runtime:
+                run_id = self._safe_start_run(
+                    runtime=runtime,
+                    status="running" if runtime.enabled else "cancelled",
+                    input_json=input_json,
+                    requested_by=first.from_number,
+                )
+                self._add_run_event(
+                    run_id,
+                    "info",
+                    "webhook_received",
+                    "Webhook messages received by queue.",
+                    {"message_ids": input_json["message_ids"]},
+                )
+                self._add_run_event(
+                    run_id,
+                    "info",
+                    "message_queued",
+                    "Messages queued for background processing.",
+                    {"batch_count": len(batch)},
+                )
+                self._add_run_event(
+                    run_id,
+                    "info",
+                    "batch_window_started",
+                    "Batch window completed for WhatsApp lead.",
+                    {
+                        "batch_window_seconds": self.settings.lead_batch_window_seconds,
+                        "batch_count": len(batch),
+                    },
+                )
+                self._add_run_event(
+                    run_id,
+                    "info",
+                    "platform_runtime_resolved",
+                    "Platform runtime resolved.",
+                    {
+                        "agent_key": runtime.agent_key,
+                        "version": runtime.version,
+                        "enabled": runtime.enabled,
+                    },
+                )
+                if not runtime.enabled:
+                    self._add_run_event(
+                        run_id,
+                        "info",
+                        "platform_disabled_skip",
+                        "Agent execution skipped because platform disabled this agent.",
+                        input_json,
+                    )
+                    return
+
+        self._add_run_event(
+            run_id,
+            "info",
+            "batch_compacted",
+            "WhatsApp messages compacted into one agent input.",
+            {"batch_count": len(batch), "message_ids": input_json["message_ids"]},
+        )
+        started_at = time.time()
+        try:
+            self._add_run_event(run_id, "info", "agent_started", "Agent execution started.", {})
+            response = self.agent.invoke(
+                message=combined_text,
+                lead_external_id=first.from_number,
+                channel=first.channel,
+                external_message_id=external_message_id,
+            )
+            self._add_run_event(
+                run_id,
+                "info",
+                "agent_completed",
+                "Agent execution completed.",
+                {"action": response.action, "message_count": len(response.response_messages)},
+            )
+            self._add_run_event(run_id, "info", "whatsapp_send_started", "WhatsApp send started.", {})
+            self.client.send_text(first.from_number, response.response)
+            self._add_run_event(
+                run_id,
+                "info",
+                "whatsapp_send_completed",
+                "WhatsApp send completed.",
+                {"message_count": len(response.response_messages)},
+            )
+            duration_ms = int((time.time() - started_at) * 1000)
+            output_json = response_output_json(response, debug_metadata=self.settings.debug_metadata)
+            total_tokens = extract_total_tokens(response.token_usage)
+            if self.observability:
+                self._safe_update_run(
+                    run_id=run_id,
+                    status="success",
+                    output_json=output_json,
+                    total_tokens=total_tokens,
+                    total_duration_ms=duration_ms,
+                )
+                self.observability.add_event_async(
+                    run_id=run_id,
+                    level="info",
+                    event_type="run_completed",
+                    message="Run completed successfully.",
+                    payload_json={"duration_ms": duration_ms, "total_tokens": total_tokens},
+                )
+        except Exception as exc:
+            duration_ms = int((time.time() - started_at) * 1000)
+            if self.observability:
+                self._safe_update_run(
+                    run_id=run_id,
+                    status="failed",
+                    output_json=None,
+                    total_duration_ms=duration_ms,
+                    error_text=f"{type(exc).__name__}: {str(exc)[:500]}",
+                )
+                self.observability.add_event_async(
+                    run_id=run_id,
+                    level="error",
+                    event_type="run_failed",
+                    message="Run failed.",
+                    payload_json={"error": f"{type(exc).__name__}: {str(exc)[:500]}"},
+                )
+            raise
+
+    def _record_queue_event(self, event_type: str, message: str, payload: Dict[str, Any]) -> None:
+        logger.info("%s: %s %s", event_type, message, payload)
+
+    def _safe_start_run(
+        self,
+        *,
+        runtime: Any,
+        status: str,
+        input_json: Dict[str, Any],
+        requested_by: str,
+    ) -> Optional[str]:
+        if not self.observability:
+            return None
+        try:
+            return self.observability.start_run_async(
+                runtime=runtime,
+                status=status,
+                input_json=input_json,
+                requested_by=requested_by,
+            )
+        except Exception as exc:
+            logger.warning("Platform start_run failed: %s", exc)
+            return None
+
+    def _safe_update_run(
+        self,
+        *,
+        run_id: Optional[str],
+        status: str,
+        output_json: Optional[Dict[str, Any]],
+        total_tokens: Optional[int] = None,
+        total_duration_ms: Optional[int] = None,
+        error_text: Optional[str] = None,
+    ) -> None:
+        if not self.observability:
+            return
+        try:
+            self.observability.update_run_async(
+                run_id=run_id,
+                status=status,
+                output_json=output_json,
+                total_tokens=total_tokens,
+                total_duration_ms=total_duration_ms,
+                error_text=error_text,
+            )
+        except Exception as exc:
+            logger.warning("Platform update_run failed: %s", exc)
+
+    def _add_run_event(
+        self,
+        run_id: Optional[str],
+        level: str,
+        event_type: str,
+        message: str,
+        payload_json: Dict[str, Any],
+    ) -> None:
+        if self.observability:
+            try:
+                self.observability.add_event_async(
+                    run_id=run_id,
+                    level=level,
+                    event_type=event_type,
+                    message=message,
+                    payload_json=payload_json,
+                )
+            except Exception as exc:
+                logger.warning("Platform add_event failed: %s", exc)
+
+
+def build_queue(settings: Settings) -> WhatsAppQueue:
+    if settings.webhook_queue_enabled and settings.redis_url:
+        try:
+            return RedisWhatsAppQueue(settings.redis_url)
+        except Exception as exc:
+            logger.warning("Redis WhatsApp queue unavailable; falling back to in-memory queue: %s", exc)
+    return InMemoryWhatsAppQueue()
+
+
+def combine_messages(messages: List[QueuedWhatsAppMessage]) -> str:
+    if len(messages) == 1:
+        return messages[0].text
+    lines = []
+    for index, message in enumerate(messages, start=1):
+        lines.append(f"Mensaje {index}: {message.text}")
+    return "\n".join(lines)

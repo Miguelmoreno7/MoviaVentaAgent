@@ -1,0 +1,65 @@
+version: "3.8"
+
+services:
+  movia_sales_agent:
+    build: .
+    container_name: movia_sales_agent
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      OPENAI_ANALYSIS_MODEL: ${OPENAI_ANALYSIS_MODEL}
+      OPENAI_RESPONSE_MODEL: ${OPENAI_RESPONSE_MODEL}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      OPENAI_EMBEDDING_DIMENSIONS: ${OPENAI_EMBEDDING_DIMENSIONS:-1536}
+      META_WHATSAPP_ACCESS_TOKEN: ${META_WHATSAPP_ACCESS_TOKEN}
+      META_WHATSAPP_PHONE_NUMBER_ID: ${META_WHATSAPP_PHONE_NUMBER_ID}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      MOVIA_INTERNAL_API_KEY: ${MOVIA_INTERNAL_API_KEY}
+      MOVIA_ENABLE_DEBUG_UI: ${MOVIA_ENABLE_DEBUG_UI:-false}
+      MOVIA_DEBUG_METADATA: ${MOVIA_DEBUG_METADATA:-false}
+      MOVIA_WEBHOOK_QUEUE_ENABLED: ${MOVIA_WEBHOOK_QUEUE_ENABLED:-true}
+      MOVIA_JOB_CONCURRENCY: ${MOVIA_JOB_CONCURRENCY:-4}
+      MOVIA_LEAD_BATCH_WINDOW_SECONDS: ${MOVIA_LEAD_BATCH_WINDOW_SECONDS:-15}
+      MOVIA_PLATFORM_OBSERVABILITY_ENABLED: ${MOVIA_PLATFORM_OBSERVABILITY_ENABLED:-true}
+      MOVIA_PLATFORM_AGENT_KEY: ${MOVIA_PLATFORM_AGENT_KEY:-movia_sales_agent}
+      MOVIA_PLATFORM_AGENT_VERSION: ${MOVIA_PLATFORM_AGENT_VERSION:-v1}
+      MOVIA_PLATFORM_RUNTIME_CACHE_SECONDS: ${MOVIA_PLATFORM_RUNTIME_CACHE_SECONDS:-30}
+      AGENTS_REGISTRY_PATH: ${AGENTS_REGISTRY_PATH:-platform_registry/agents.json}
+      SYNC_TIMEOUT_SECONDS: ${SYNC_TIMEOUT_SECONDS:-20}
+    depends_on:
+      - redis
+    restart: always
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.movia-sales-agent.rule=Host(`agent.moviatech.com.mx`)
+      - traefik.http.routers.movia-sales-agent.entrypoints=websecure
+      - traefik.http.routers.movia-sales-agent.tls.certResolver=letsencrypt
+      - traefik.http.services.movia-sales-agent.loadbalancer.server.port=8000
+
+  redis:
+    image: redis:7-alpine
+    container_name: movia_sales_agent_redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    restart: always
+    networks:
+      - dokploy-network
+    volumes:
+      - movia-sales-agent-redis-data:/data
+
+volumes:
+  movia-sales-agent-redis-data:
+
+networks:
+  dokploy-network:
+    external: true

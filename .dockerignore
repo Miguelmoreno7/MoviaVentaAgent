@@ -1,0 +1,10 @@
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.git
+.env
+artifacts
+docs/knowledge_change_requests
+frontend/node_modules

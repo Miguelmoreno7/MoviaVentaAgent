@@ -1,0 +1,129 @@
+[
+  {
+    "slug": "movia-captura",
+    "name": "MovIA Captura",
+    "status": "available",
+    "setup_price_mxn": 4900,
+    "monthly_price_mxn": 450,
+    "delivery_time": "3-5 días hábiles",
+    "included_meetings": {
+      "before_release": "Máximo 2 juntas de 1 hora antes del release",
+      "monthly": "Máximo 2 juntas por mes"
+    },
+    "short_description": "Agente de atención y captura de leads para WhatsApp, sin acciones externas.",
+    "includes": [
+      "Califica leads",
+      "Responde dudas con base en información del negocio",
+      "Puede usar RAG para preguntas abiertas",
+      "Redirecciona a humano",
+      "Puede entender texto, audio e imágenes si se configura",
+      "Accede a bases de datos e información interna aprobada"
+    ],
+    "excludes": [
+      "No agenda citas",
+      "No realiza llamadas",
+      "No cotiza mediante sistemas externos",
+      "No ejecuta acciones en plataformas externas",
+      "No consulta APIs externas",
+      "No maneja objeciones comerciales avanzadas",
+      "No tiene intención estratégica de venta",
+      "No da servicio postventa automatizado"
+    ],
+    "recommended_when": [
+      "El cliente necesita responder dudas",
+      "El cliente tiene campañas de Facebook o WhatsApp Ads",
+      "El cliente recibe muchos mensajes pidiendo información o precios",
+      "No se requiere acción externa"
+    ]
+  },
+  {
+    "slug": "movia-hibrido",
+    "name": "MovIA Híbrido",
+    "status": "available",
+    "setup_price_mxn": 7500,
+    "monthly_price_mxn": 550,
+    "delivery_time": "5-10 días hábiles",
+    "included_meetings": {
+      "before_release": "Máximo 2 juntas de 1 hora antes del release",
+      "monthly": "Máximo 2 juntas por mes"
+    },
+    "short_description": "Agente de atención con hasta 2 acciones operativas acordadas, como agendar, cotizar, registrar o interactuar con herramientas aprobadas cuando sea viable.",
+    "includes": [
+      "Todo lo de MovIA Captura",
+      "Hasta 2 acciones operativas acordadas",
+      "Puede funcionar como secretaria digital",
+      "Puede agendar, cotizar o registrar información si está dentro del alcance",
+      "Puede crear o actualizar registros cuando sea una de las acciones acordadas y la herramienta sea viable",
+      "Puede consultar o enviar información a una herramienta o proceso aprobado después de revisión técnica",
+      "Puede enviar recordatorios",
+      "Puede dar seguimiento básico al lead"
+    ],
+    "excludes": [
+      "No maneja objeciones comerciales avanzadas",
+      "No tiene intención de vender estratégicamente",
+      "No incluye acciones ilimitadas",
+      "No incluye integraciones complejas ilimitadas",
+      "No garantiza compatibilidad con una herramienta específica antes de revisar técnicamente el proceso",
+      "No incluye CRM, ERP, sistema contable, plataforma propietaria o API no revisada como integración garantizada",
+      "No incluye lógica de negocio avanzada o altamente personalizada",
+      "No incluye features no pactados",
+      "No da servicio postventa complejo"
+    ],
+    "recommended_when": [
+      "El cliente necesita que el agente haga una acción",
+      "El cliente quiere agendamiento o cotización simple",
+      "El cliente tiene procesos repetitivos que pueden automatizarse parcialmente"
+    ]
+  },
+  {
+    "slug": "movia-ventas",
+    "name": "Agente MovIA Ventas",
+    "status": "not_available",
+    "setup_price_mxn": 13500,
+    "monthly_price_mxn": 1000,
+    "delivery_time": "Aproximadamente 15 días hábiles",
+    "included_meetings": {
+      "before_release": "Máximo 3 juntas antes del release",
+      "monthly": "Máximo 3 juntas por mes"
+    },
+    "short_description": "Agente de preventa y persuasión comercial. Aún no disponible.",
+    "includes": [
+      "Todo lo de MovIA Captura",
+      "Todo lo de MovIA Híbrido cuando aplique",
+      "Perfilamiento contextual del lead",
+      "Detección de intención de compra",
+      "Persuasión y avance hacia compra o agenda",
+      "Manejo de objeciones según configuración"
+    ],
+    "excludes": [
+      "No llamadas telefónicas",
+      "No integraciones ilimitadas",
+      "No servicio postventa automatizado",
+      "No reemplaza negociaciones humanas complejas",
+      "No incluye desarrollo de features específicos sin cotización"
+    ]
+  },
+  {
+    "slug": "movia-pro-comercial",
+    "name": "Agente MovIA Pro Comercial",
+    "status": "not_available",
+    "setup_price_mxn": 25000,
+    "monthly_price_mxn": 2000,
+    "delivery_time": "Aproximadamente 15 días hábiles",
+    "short_description": "Agente comercial avanzado tipo agentic. Aún no disponible.",
+    "includes": [
+      "Todo lo anterior",
+      "Mayor personalización comercial",
+      "Mejor manejo de memoria y contexto",
+      "Mayor capacidad para conversaciones no lineales",
+      "Arquitectura conversacional avanzada"
+    ],
+    "excludes": [
+      "No features específicos sin cotización",
+      "No consultoría ilimitada",
+      "No integraciones complejas ilimitadas",
+      "No llamadas telefónicas",
+      "No desarrollo personalizado fuera de alcance"
+    ]
+  }
+]

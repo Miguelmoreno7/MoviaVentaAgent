@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MovIA Agent Tester</title>
+    <link rel="stylesheet" href="/frontend/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>MovIA Agent Tester</h1>
+          <p id="service-status">Checking service...</p>
+        </div>
+        <div class="topbar-controls">
+          <label>
+            <span>Lead</span>
+            <input id="lead-id" />
+          </label>
+          <label>
+            <span>Channel</span>
+            <select id="channel">
+              <option value="local">local</option>
+              <option value="whatsapp">whatsapp</option>
+            </select>
+          </label>
+          <button id="reset-chat" class="icon-button" title="Reset chat" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7" />
+              <path d="M3 4v6h6" />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="chat-panel" aria-label="Chat tester">
+          <div class="panel-header">
+            <h2>Chat</h2>
+            <span id="request-state">Idle</span>
+          </div>
+          <div id="messages" class="messages" aria-live="polite"></div>
+          <div class="quick-prompts" aria-label="Sample messages">
+            <button type="button">¿Cuánto cuesta?</button>
+            <button type="button">Se me hace caro.</button>
+            <button type="button">Quiero empezar.</button>
+            <button type="button">¿Esto es como ManyChat?</button>
+          </div>
+          <form id="chat-form" class="composer">
+            <textarea id="message-input" rows="3" placeholder="Escribe un mensaje de prueba..."></textarea>
+            <button class="send-button" type="submit" title="Send message">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m22 2-7 20-4-9-9-4Z" />
+                <path d="M22 2 11 13" />
+              </svg>
+              <span>Send</span>
+            </button>
+          </form>
+        </section>
+
+        <section class="diagnostics" aria-label="Run diagnostics">
+          <div class="metric-strip">
+            <article>
+              <span>Total Tokens</span>
+              <strong id="total-tokens">0</strong>
+            </article>
+            <article>
+              <span>Input</span>
+              <strong id="input-tokens">0</strong>
+            </article>
+            <article>
+              <span>Output</span>
+              <strong id="output-tokens">0</strong>
+            </article>
+            <article>
+              <span>Action</span>
+              <strong id="action-name">none</strong>
+            </article>
+          </div>
+
+          <div class="diagnostic-grid">
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Lead State</h2>
+              </div>
+              <dl id="lead-state" class="kv-list"></dl>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Selected Action</h2>
+              </div>
+              <dl id="selected-action" class="kv-list"></dl>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-header">
+                <h2>Retrieved Sources</h2>
+                <span id="source-count">0 chunks</span>
+              </div>
+              <div id="sources" class="sources"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Response Metadata</h2>
+              </div>
+              <pre id="response-metadata" class="json-view">{}</pre>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <h2>Tokens</h2>
+              </div>
+              <div id="token-calls" class="token-calls"></div>
+            </section>
+
+            <section class="panel wide">
+              <div class="panel-header">
+                <h2>WhatsApp Messages</h2>
+                <span id="message-count">0 messages</span>
+              </div>
+              <div id="message-parts" class="message-parts"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/frontend/app.js"></script>
+  </body>
+</html>

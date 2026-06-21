@@ -1,0 +1,56 @@
+{
+  "actions": [
+    {
+      "id": "answer_and_advance",
+      "description": "Responder la duda explícita y avanzar una micro-etapa comercial."
+    },
+    {
+      "id": "discover_need",
+      "description": "Obtener datos mínimos del negocio, canal y dolor."
+    },
+    {
+      "id": "narrow_solution",
+      "description": "Separar si el cliente necesita Captura, Híbrido, Ventas o Pro."
+    },
+    {
+      "id": "recommend_solution",
+      "description": "Recomendar un producto con base en el contexto."
+    },
+    {
+      "id": "persuade_value",
+      "description": "Explicar valor, costo de oportunidad y beneficios."
+    },
+    {
+      "id": "handle_objection",
+      "description": "Manejar objeciones con playbook estilo Salesforce."
+    },
+    {
+      "id": "risk_reversal",
+      "description": "Reducir miedo mediante pruebas, revisión y ajustes."
+    },
+    {
+      "id": "compare_alternative",
+      "description": "Comparar MovIA contra alternativas sin atacar."
+    },
+    {
+      "id": "explain_process",
+      "description": "Explicar proceso de app, depósito, integración o review."
+    },
+    {
+      "id": "soft_close",
+      "description": "Invitar a iniciar sin presión."
+    },
+    {
+      "id": "direct_close",
+      "description": "Enviar link y explicar contratación cuando el usuario quiere empezar."
+    },
+    {
+      "id": "handoff_to_miguel",
+      "description": "Redirigir post-compra o soporte a Miguel."
+    },
+    {
+      "id": "answer_unknown_safely",
+      "description": "Responder sin inventar y regresar al alcance comercial."
+    }
+  ]
+}

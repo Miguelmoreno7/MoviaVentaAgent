@@ -1,0 +1,84 @@
+{
+  "dataset_version": "phase4-supplementary-2026-06-16",
+  "description": "Supplementary live validation for missing Phase 4 state, routing, and payment composition cases.",
+  "scenarios": [
+    {
+      "conversation_id": "PHASE4-SUP-001",
+      "title": "Requirement replacement",
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Quiero que el agente responda dudas y también agende citas."
+        },
+        {
+          "turn_id": 2,
+          "user": "No, eso ya se fue muy caro. Entonces mejor solo que responda precios."
+        },
+        {
+          "turn_id": 3,
+          "user": "Entonces, ¿cuál me conviene?"
+        }
+      ]
+    },
+    {
+      "conversation_id": "PHASE4-SUP-002",
+      "title": "Product capability and Knowledge Planner",
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "¿MovIA Captura puede entender audios que mandan mis clientes?"
+        }
+      ]
+    },
+    {
+      "conversation_id": "PHASE4-SUP-003",
+      "title": "Active objection resolution",
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "Se me hace muy caro pagar una mensualidad por esto."
+        },
+        {
+          "turn_id": 2,
+          "user": "Ok, entiendo lo del mantenimiento y la infraestructura."
+        },
+        {
+          "turn_id": 3,
+          "user": "Con eso ya no es tanto problema. Entonces, ¿qué plan me conviene?"
+        }
+      ]
+    },
+    {
+      "conversation_id": "PHASE4-SUP-004",
+      "title": "Deposit payment and refund source routing",
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "¿Cuánto cuesta MovIA Híbrido?"
+        },
+        {
+          "turn_id": 2,
+          "user": "¿Y cuánto tengo que pagar para empezar?"
+        },
+        {
+          "turn_id": 3,
+          "user": "¿Y si después me arrepiento del depósito?"
+        }
+      ]
+    },
+    {
+      "conversation_id": "PHASE4-SUP-005",
+      "title": "Product reference versus selection",
+      "turns": [
+        {
+          "turn_id": 1,
+          "user": "¿Cuánto cuesta MovIA Captura?"
+        },
+        {
+          "turn_id": 2,
+          "user": "Sí, Captura cubre lo que necesito. Quiero contratarlo, pásame el link."
+        }
+      ]
+    }
+  ]
+}

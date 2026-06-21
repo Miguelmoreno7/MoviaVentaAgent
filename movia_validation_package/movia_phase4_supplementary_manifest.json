@@ -1,0 +1,32 @@
+{
+  "manifest_version": "phase4-supplementary-2026-06-16",
+  "phase": "PHASE_4_SUPPLEMENTARY_LIVE",
+  "description": "Evaluation-only supplementary live validation for Phase 2 and Phase 3 fixes not covered by the older Analyzer V3 manifest.",
+  "dataset": "movia_validation_package/movia_phase4_supplementary_scenarios.json",
+  "expected_turns": 12,
+  "required_mode": {
+    "analysis_model": "gpt-4.1-mini",
+    "response_model": "gpt-4.1-mini",
+    "openai_enabled": true,
+    "database_enabled": true,
+    "fallback_allowed": false
+  },
+  "gates": [
+    "hard_failures",
+    "provider_errors",
+    "fallbacks",
+    "requirement_replacement_failures",
+    "requirement_profile_reset_failures",
+    "wrong_product_after_replacement",
+    "audio_capability_factual_errors",
+    "product_capability_routing_misses",
+    "active_objection_resolution_failures",
+    "resolved_objection_remains_blocking",
+    "deposit_setup_composition_errors",
+    "refund_policy_errors",
+    "required_policy_source_misses",
+    "premature_selected_product_assignments",
+    "explicit_product_commitment_misses",
+    "wrong_product_direct_closes"
+  ]
+}

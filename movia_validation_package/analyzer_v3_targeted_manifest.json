@@ -1,0 +1,105 @@
+{
+  "manifest_version": "analyzer-v3-targeted-2026-06-06",
+  "phase": "PLAN_ANALYZER_V3_PHASE_4",
+  "description": "Reference-only targeted validation manifest for the highest-risk Analyzer V3 contract cases.",
+  "datasets": {
+    "coherent": "movia_validation_package/movia_coherent_scripted_conversations.json",
+    "atomic": "movia_validation_package/movia_difficult_lead_validation_scenarios.json"
+  },
+  "cases": [
+    {
+      "case_id": "premature_recommendation",
+      "dataset": "coherent",
+      "scenario_id": "MOVIA-COH-001",
+      "turn_ranges": [[1, 4]],
+      "focus_turn_ids": [1, 2, 3, 4],
+      "checks": ["premature_captura_recommendation", "action_requirement_unknown_discovery"]
+    },
+    {
+      "case_id": "external_action_captura_hard_failure",
+      "dataset": "coherent",
+      "scenario_id": "MOVIA-COH-004",
+      "turn_ranges": [[1, 6]],
+      "focus_turn_ids": [5],
+      "checks": ["external_action_routing", "captura_external_action_overpromise"]
+    },
+    {
+      "case_id": "instagram_channel_hard_failure",
+      "dataset": "coherent",
+      "scenario_id": "MOVIA-COH-004",
+      "turn_ranges": [[1, 3]],
+      "focus_turn_ids": [1, 2, 3],
+      "checks": ["unsupported_channel_claim", "multichannel_claim"]
+    },
+    {
+      "case_id": "explicit_start_not_need_to_think",
+      "dataset": "coherent",
+      "scenario_id": "MOVIA-COH-004",
+      "turn_ranges": [[1, 7]],
+      "focus_turn_ids": [7],
+      "checks": ["explicit_start_precision", "need_to_think_false_positive"]
+    },
+    {
+      "case_id": "false_historical_references",
+      "scenario_refs": [
+        {
+          "dataset": "coherent",
+          "scenario_id": "MOVIA-COH-001",
+          "turn_ranges": [[1, 5]],
+          "focus_turn_ids": [1, 2, 3, 4, 5]
+        },
+        {
+          "dataset": "coherent",
+          "scenario_id": "MOVIA-MEM-001",
+          "turn_ranges": [[1, 5]],
+          "focus_turn_ids": [1, 3, 4, 5]
+        },
+        {
+          "dataset": "coherent",
+          "scenario_id": "MOVIA-COH-005",
+          "turn_ranges": [[1, 5]],
+          "focus_turn_ids": [1, 2, 5]
+        }
+      ],
+      "checks": ["false_prior_reference", "hallucinated_turn_number"]
+    },
+    {
+      "case_id": "true_historical_references",
+      "dataset": "coherent",
+      "scenario_id": "MOVIA-MEM-002",
+      "turn_ranges": [[1, 6]],
+      "focus_turn_ids": [4, 5, 6],
+      "checks": ["true_prior_reference_retained"]
+    },
+    {
+      "case_id": "sarcastic_soft_concern",
+      "dataset": "atomic",
+      "scenario_id": "MOVIA-VAL-001",
+      "turn_ranges": [[1, 1]],
+      "focus_turn_ids": [1],
+      "checks": ["sarcastic_soft_concern", "impossible_objection_state"]
+    },
+    {
+      "case_id": "price_question_not_objection_or_start",
+      "scenario_refs": [
+        {
+          "dataset": "atomic",
+          "scenario_id": "MOVIA-VAL-005",
+          "turn_ranges": [[1, 1]],
+          "focus_turn_ids": [1]
+        },
+        {
+          "dataset": "atomic",
+          "scenario_id": "MOVIA-VAL-001",
+          "turn_ranges": [[4, 4]],
+          "focus_turn_ids": [4]
+        }
+      ],
+      "checks": ["price_question_precision", "price_objection_false_positive", "explicit_start_false_positive"]
+    }
+  ],
+  "previous_run_globs": [
+    "artifacts/evaluations/phase6-coherent-db-openai/*/run.json",
+    "artifacts/evaluations/phase6-atomic-db-openai/*/run.json"
+  ]
+}

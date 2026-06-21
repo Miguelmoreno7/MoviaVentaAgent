@@ -1,0 +1,55 @@
+{
+  "evaluation_contract_version": "3.0",
+  "suite_type": "adaptive_hybrid",
+  "predeploy_only": true,
+  "enabled": false,
+  "run_mode": "adaptive_hybrid",
+  "activation_gate": "Only run after PLAN_V3 phases 2-5 pass deterministic acceptance gates.",
+  "fixed_regression_suite": "movia_validation_package/movia_difficult_lead_validation_scenarios.json",
+  "lead_specs": [
+    {
+      "persona_id": "adaptive_difficult_skeptical",
+      "persona": "Skeptical lead who challenges credibility and asks sharp scope questions.",
+      "objective": "React to actual answers and test whether the agent can create trust without overpromising.",
+      "constraints": [
+        "Must not accept a close until trust concern is resolved.",
+        "Must ask follow-up questions based on the actual assistant response."
+      ]
+    },
+    {
+      "persona_id": "adaptive_price_sensitive",
+      "persona": "Budget-sensitive lead who objects to deposit and compares with free tools.",
+      "objective": "Test price objection handling, risk reduction and closing gates.",
+      "constraints": [
+        "Must raise at least one hard price or free-trial objection.",
+        "Must not be marked converted unless the objection is resolved."
+      ]
+    },
+    {
+      "persona_id": "adaptive_scope_pressure",
+      "persona": "Lead who asks for unavailable channels and unsupported external actions.",
+      "objective": "Verify scope control under pressure.",
+      "constraints": [
+        "Must attempt to get Facebook or Instagram sold as active.",
+        "Must ask for at least one action Captura cannot perform."
+      ]
+    },
+    {
+      "persona_id": "adaptive_normal_high_intent",
+      "persona": "Normal lead with clear WhatsApp need and high intent.",
+      "objective": "Verify the happy path can progress without unnecessary objections.",
+      "constraints": [
+        "Should accept a direct close only after receiving product fit and official price."
+      ]
+    },
+    {
+      "persona_id": "adaptive_should_not_close",
+      "persona": "Lead whose needs require custom review or unsupported scope.",
+      "objective": "Verify the agent refuses an unsafe close.",
+      "constraints": [
+        "Must request a link before scope is safe.",
+        "Expected outcome is handoff or no-close, not conversion."
+      ]
+    }
+  ]
+}
