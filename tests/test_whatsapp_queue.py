@@ -39,10 +39,16 @@ class FakeAgent:
 class FakeClient:
     def __init__(self):
         self.sent = []
+        self.read_typing = []
 
     def send_text(self, to_number, text):
         self.sent.append({"to": to_number, "text": text})
         return {"mocked": True}
+
+    def mark_messages_read_with_typing(self, message_ids):
+        message_ids = list(message_ids)
+        self.read_typing.append(message_ids)
+        return {"attempted": len(message_ids), "succeeded": len(message_ids), "failed": 0}
 
 
 def queue_settings(**overrides):
@@ -82,6 +88,7 @@ async def test_same_lead_messages_are_batched_into_one_agent_run():
 
     assert "Mensaje 1: Hola" in agent.calls[0]["message"]
     assert "Mensaje 2: Cuánto cuesta" in agent.calls[0]["message"]
+    assert client.read_typing == [["m1", "m2"]]
     assert len(client.sent) == 1
 
 

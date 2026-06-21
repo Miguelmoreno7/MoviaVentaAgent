@@ -381,7 +381,15 @@ class WhatsAppWorkerManager:
         )
         started_at = time.time()
         try:
-            self._add_run_event(run_id, "info", "agent_started", "Agent execution started.", {})
+            typing_result = self.client.mark_messages_read_with_typing(input_json["message_ids"])
+            logger.info("whatsapp_typing_indicator_sent result=%s", typing_result)
+            self._add_run_event(
+                run_id,
+                "info",
+                "agent_started",
+                "Agent execution started.",
+                {"typing_indicator": typing_result},
+            )
             response = self.agent.invoke(
                 message=combined_text,
                 lead_external_id=first.from_number,

@@ -128,10 +128,16 @@ class FakeAgent:
 class FakeWhatsAppClient:
     def __init__(self):
         self.sent = []
+        self.read_typing = []
 
     def send_text(self, to_number, text):
         self.sent.append({"to": to_number, "text": text})
         return {"mocked": True}
+
+    def mark_messages_read_with_typing(self, message_ids):
+        message_ids = list(message_ids)
+        self.read_typing.append(message_ids)
+        return {"attempted": len(message_ids), "succeeded": len(message_ids), "failed": 0}
 
 
 def test_registry_json_shape_matches_platform_contract():

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Iterable, List
 
 import httpx
 
 from movia_sales_agent.config.settings import Settings
 from movia_sales_agent.whatsapp.formatting import split_whatsapp_messages
+
+
+logger = logging.getLogger(__name__)
 
 
 class WhatsAppMessage:
@@ -84,6 +88,42 @@ class WhatsAppClient:
             result = self._send_single_text(to_number, message)
             results.append({"index": index, "text": message, "result": result})
         return {"split": True, "count": len(results), "messages": results}
+
+    def mark_read_with_typing(self, message_id: str) -> Dict[str, Any]:
+        if not self.enabled:
+            return {"mocked": True, "message_id": message_id, "typing_indicator": True}
+        url = (
+            "https://graph.facebook.com/v20.0/"
+            f"{self.settings.meta_whatsapp_phone_number_id}/messages"
+        )
+        payload = {
+            "messaging_product": "whatsapp",
+            "status": "read",
+            "message_id": message_id,
+            "typing_indicator": {"type": "text"},
+        }
+        headers = {
+            "Authorization": f"Bearer {self.settings.meta_whatsapp_access_token}",
+            "Content-Type": "application/json",
+        }
+        with httpx.Client(timeout=8) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            return response.json()
+
+    def mark_messages_read_with_typing(self, message_ids: Iterable[str]) -> Dict[str, Any]:
+        attempted = 0
+        succeeded = 0
+        failed = 0
+        for message_id in dict.fromkeys(message_ids):
+            attempted += 1
+            try:
+                self.mark_read_with_typing(message_id)
+                succeeded += 1
+            except Exception as exc:
+                failed += 1
+                logger.warning("WhatsApp read/typing indicator failed message_id=%s error=%s", message_id, exc)
+        return {"attempted": attempted, "succeeded": succeeded, "failed": failed}
 
     def _send_single_text(self, to_number: str, text: str) -> Dict[str, Any]:
         if not self.enabled:
