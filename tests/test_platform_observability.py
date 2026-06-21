@@ -1,6 +1,7 @@
 import time
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from movia_sales_agent.config.settings import Settings
@@ -73,6 +74,33 @@ class FakePlatformClient:
         if self.fail_updates:
             raise RuntimeError("update failed")
         self.updates.append(kwargs)
+
+
+def conflict_error() -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://example.supabase.co/rest/v1/run_events")
+    response = httpx.Response(
+        409,
+        request=request,
+        json={"code": "23503", "message": "insert or update violates foreign key"},
+    )
+    return httpx.HTTPStatusError(
+        "Client error '409 Conflict' for url 'https://example.supabase.co/rest/v1/run_events'",
+        request=request,
+        response=response,
+    )
+
+
+class ConflictThenSuccessPlatformClient(FakePlatformClient):
+    def __init__(self, conflicts: int):
+        super().__init__()
+        self.conflicts = conflicts
+        self.event_attempts = 0
+
+    def add_event(self, **kwargs):
+        self.event_attempts += 1
+        if self.event_attempts <= self.conflicts:
+            raise conflict_error()
+        self.events.append(kwargs)
 
 
 class FakeAgent:
@@ -298,6 +326,52 @@ def test_extract_total_tokens_from_nested_chat_response_usage():
     }
 
     assert extract_total_tokens(payload) == 500
+
+
+def test_event_write_retries_transient_conflict(monkeypatch):
+    client = ConflictThenSuccessPlatformClient(conflicts=2)
+    service = PlatformObservabilityService(
+        settings=platform_settings(),
+        client=client,
+        resolver=PlatformRuntimeResolver(settings=platform_settings(), client=client),
+    )
+    import movia_sales_agent.platform.observability as observability
+
+    monkeypatch.setattr(observability.time, "sleep", lambda _seconds: None)
+
+    service._add_event_best_effort(
+        run_id="run-1",
+        level="info",
+        event_type="agent_started",
+        message="Agent started.",
+        payload_json={},
+    )
+
+    assert client.event_attempts == 3
+    assert client.events[0]["event_type"] == "agent_started"
+
+
+def test_event_write_stops_after_repeated_conflicts(monkeypatch):
+    client = ConflictThenSuccessPlatformClient(conflicts=10)
+    service = PlatformObservabilityService(
+        settings=platform_settings(),
+        client=client,
+        resolver=PlatformRuntimeResolver(settings=platform_settings(), client=client),
+    )
+    import movia_sales_agent.platform.observability as observability
+
+    monkeypatch.setattr(observability.time, "sleep", lambda _seconds: None)
+
+    service._add_event_best_effort(
+        run_id="run-1",
+        level="info",
+        event_type="agent_started",
+        message="Agent started.",
+        payload_json={},
+    )
+
+    assert client.event_attempts == 4
+    assert client.events == []
 
 
 async def wait_for(predicate, timeout=1.0):

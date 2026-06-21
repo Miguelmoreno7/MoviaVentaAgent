@@ -18,6 +18,7 @@ from movia_sales_agent.models.schemas import ChatResponse
 
 
 logger = logging.getLogger(__name__)
+TRANSIENT_CONFLICT_RETRY_DELAYS = (0.15, 0.35, 0.75)
 
 
 def iso_now() -> str:
@@ -30,6 +31,18 @@ def coerce_int(value: Any) -> Optional[int]:
     if isinstance(value, Number):
         return int(value)
     return None
+
+
+def http_error_detail(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        body = response.text[:1000] if response is not None else ""
+        return f"{exc} response_body={body}"
+    return str(exc)
+
+
+def is_conflict_error(exc: Exception) -> bool:
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 409
 
 
 def extract_total_tokens(payload: Any) -> Optional[int]:
@@ -462,22 +475,38 @@ class PlatformObservabilityService:
         ).start()
 
     def _add_event_best_effort(self, **kwargs: Any) -> None:
-        try:
-            self.client.add_event(**kwargs)
-        except Exception as exc:
-            logger.warning("Platform run event write failed: %s", exc)
+        for attempt, delay in enumerate((0.0, *TRANSIENT_CONFLICT_RETRY_DELAYS), start=1):
+            if delay:
+                time.sleep(delay)
+            try:
+                self.client.add_event(**kwargs)
+                return
+            except Exception as exc:
+                if is_conflict_error(exc) and attempt <= len(TRANSIENT_CONFLICT_RETRY_DELAYS):
+                    logger.info(
+                        "Platform run event write conflict; retrying event_type=%s attempt=%s",
+                        kwargs.get("event_type"),
+                        attempt,
+                    )
+                    continue
+                logger.warning(
+                    "Platform run event write failed event_type=%s detail=%s",
+                    kwargs.get("event_type"),
+                    http_error_detail(exc),
+                )
+                return
 
     def _create_run_best_effort(self, **kwargs: Any) -> None:
         try:
             self.client.create_run(**kwargs)
         except Exception as exc:
-            logger.warning("Platform run create failed: %s", exc)
+            logger.warning("Platform run create failed: %s", http_error_detail(exc))
 
     def _update_run_best_effort(self, **kwargs: Any) -> None:
         try:
             self.client.update_run(**kwargs)
         except Exception as exc:
-            logger.warning("Platform run update failed: %s", exc)
+            logger.warning("Platform run update failed: %s", http_error_detail(exc))
 
 
 def batch_input_json(
