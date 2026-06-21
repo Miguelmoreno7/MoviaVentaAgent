@@ -182,6 +182,7 @@ async def receive_whatsapp(
 ) -> Dict[str, Any]:
     payload = await request.json()
     inbound_messages = client.parse_messages(payload)
+    logger.info("whatsapp_webhook_received parsed_messages=%s", len(inbound_messages))
     results = []
     if settings.webhook_queue_enabled:
         if manager is None:
@@ -190,6 +191,11 @@ async def receive_whatsapp(
             await manager.start()
         for inbound in inbound_messages:
             enqueue_status = await manager.enqueue(inbound)
+            logger.info(
+                "whatsapp_webhook_enqueue message_id=%s status=%s",
+                inbound.message_id,
+                enqueue_status,
+            )
             results.append({"message_id": inbound.message_id, "status": enqueue_status})
         return {"status": "accepted", "queued": len(results), "results": results}
 

@@ -69,3 +69,72 @@ def test_whatsapp_client_sends_split_messages_in_order_when_mocked():
     assert result["count"] > 1
     assert [message["index"] for message in result["messages"]] == list(range(result["count"]))
     assert all(message["result"]["mocked"] is True for message in result["messages"])
+
+
+def test_whatsapp_client_parses_n8n_wrapped_body_payload():
+    client = WhatsAppClient(
+        Settings(
+            DATABASE_URL=None,
+            OPENAI_API_KEY=None,
+            OPENAI_MODEL="offline",
+            MOVIA_DISABLE_OPENAI=True,
+            MOVIA_DISABLE_DATABASE=True,
+        )
+    )
+
+    messages = client.parse_messages(
+        [
+            {
+                "headers": {"content-type": "application/json"},
+                "body": {
+                    "messaging_product": "whatsapp",
+                    "contacts": [{"wa_id": "5218717876121"}],
+                    "messages": [
+                        {
+                            "from": "5218717876121",
+                            "id": "wamid.example",
+                            "timestamp": "1782071897",
+                            "text": {"body": "Hola!"},
+                            "type": "text",
+                        }
+                    ],
+                },
+            }
+        ]
+    )
+
+    assert len(messages) == 1
+    assert messages[0].message_id == "wamid.example"
+    assert messages[0].from_number == "5218717876121"
+    assert messages[0].text == "Hola!"
+
+
+def test_whatsapp_client_parses_direct_body_messages_payload():
+    client = WhatsAppClient(
+        Settings(
+            DATABASE_URL=None,
+            OPENAI_API_KEY=None,
+            OPENAI_MODEL="offline",
+            MOVIA_DISABLE_OPENAI=True,
+            MOVIA_DISABLE_DATABASE=True,
+        )
+    )
+
+    messages = client.parse_messages(
+        {
+            "body": {
+                "messages": [
+                    {
+                        "from": "5218717876121",
+                        "id": "wamid.direct",
+                        "text": {"body": "Hola directo"},
+                        "type": "text",
+                    }
+                ]
+            }
+        }
+    )
+
+    assert len(messages) == 1
+    assert messages[0].message_id == "wamid.direct"
+    assert messages[0].text == "Hola directo"

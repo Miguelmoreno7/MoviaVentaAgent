@@ -208,6 +208,51 @@ def test_whatsapp_webhook_fast_ack_queues_messages():
     app.dependency_overrides.clear()
 
 
+def test_whatsapp_webhook_accepts_n8n_wrapped_body_payload():
+    settings = Settings(
+        DATABASE_URL=None,
+        OPENAI_API_KEY=None,
+        OPENAI_MODEL="offline",
+        MOVIA_DISABLE_OPENAI=True,
+        MOVIA_DISABLE_DATABASE=True,
+        REDIS_URL=None,
+        MOVIA_INTERNAL_API_KEY="test-key",
+        MOVIA_WEBHOOK_QUEUE_ENABLED=True,
+        MOVIA_LEAD_BATCH_WINDOW_SECONDS=0,
+        MOVIA_PLATFORM_OBSERVABILITY_ENABLED=False,
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_agent] = lambda: MoviaSalesAgent(settings)
+    client = TestClient(app)
+
+    response = client.post(
+        "/webhooks/whatsapp",
+        json=[
+            {
+                "headers": {"content-type": "application/json"},
+                "body": {
+                    "messaging_product": "whatsapp",
+                    "messages": [
+                        {
+                            "from": "5218717876121",
+                            "id": "wamid.n8n.1",
+                            "timestamp": "1782071897",
+                            "text": {"body": "Hola!"},
+                            "type": "text",
+                        }
+                    ],
+                },
+            }
+        ],
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "accepted"
+    assert response.json()["queued"] == 1
+    assert response.json()["results"][0]["status"] == "queued"
+    app.dependency_overrides.clear()
+
+
 @pytest.mark.asyncio
 async def test_platform_registry_sync_runs_on_startup_when_enabled(monkeypatch):
     settings = Settings(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
 
 import httpx
 
@@ -23,20 +23,57 @@ class WhatsAppClient:
     def enabled(self) -> bool:
         return self.settings.whatsapp_enabled
 
-    def parse_messages(self, payload: Dict[str, Any]) -> List[WhatsAppMessage]:
+    def parse_messages(self, payload: Any) -> List[WhatsAppMessage]:
         messages: List[WhatsAppMessage] = []
-        for entry in payload.get("entry", []):
+        for body in self._candidate_bodies(payload):
+            messages.extend(self._parse_direct_messages(body))
+            messages.extend(self._parse_meta_entry_messages(body))
+        return messages
+
+    def _candidate_bodies(self, payload: Any) -> Iterable[Dict[str, Any]]:
+        if isinstance(payload, list):
+            for item in payload:
+                if isinstance(item, dict):
+                    body = item.get("body")
+                    if isinstance(body, dict):
+                        yield body
+                    yield item
+            return
+        if isinstance(payload, dict):
+            body = payload.get("body")
+            if isinstance(body, dict):
+                yield body
+            yield payload
+
+    def _parse_direct_messages(self, body: Dict[str, Any]) -> List[WhatsAppMessage]:
+        messages: List[WhatsAppMessage] = []
+        for message in body.get("messages", []):
+            parsed = self._parse_text_message(message)
+            if parsed:
+                messages.append(parsed)
+        return messages
+
+    def _parse_meta_entry_messages(self, body: Dict[str, Any]) -> List[WhatsAppMessage]:
+        messages: List[WhatsAppMessage] = []
+        for entry in body.get("entry", []):
             for change in entry.get("changes", []):
                 value = change.get("value", {})
                 for message in value.get("messages", []):
-                    if message.get("type") != "text":
-                        continue
-                    text = (message.get("text") or {}).get("body")
-                    from_number = message.get("from")
-                    message_id = message.get("id")
-                    if text and from_number and message_id:
-                        messages.append(WhatsAppMessage(message_id, from_number, text))
+                    parsed = self._parse_text_message(message)
+                    if parsed:
+                        messages.append(parsed)
         return messages
+
+    def _parse_text_message(self, message: Any) -> WhatsAppMessage | None:
+        if not isinstance(message, dict) or message.get("type") != "text":
+            return None
+        text_payload = message.get("text") or {}
+        text = text_payload.get("body") if isinstance(text_payload, dict) else None
+        from_number = message.get("from")
+        message_id = message.get("id")
+        if text and from_number and message_id:
+            return WhatsAppMessage(str(message_id), str(from_number), str(text))
+        return None
 
     def send_text(self, to_number: str, text: str) -> Dict[str, Any]:
         messages = split_whatsapp_messages(text)
