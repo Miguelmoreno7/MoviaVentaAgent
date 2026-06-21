@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     platform_runtime_cache_seconds: int = Field(
         default=30, alias="MOVIA_PLATFORM_RUNTIME_CACHE_SECONDS"
     )
+    platform_registry_sync_on_startup: bool = Field(
+        default=True, alias="MOVIA_PLATFORM_REGISTRY_SYNC_ON_STARTUP"
+    )
     agents_registry_path_value: str = Field(
         default="platform_registry/agents.json", alias="AGENTS_REGISTRY_PATH"
     )

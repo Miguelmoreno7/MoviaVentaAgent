@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
@@ -13,6 +15,7 @@ from movia_sales_agent.agent.graph import MoviaSalesAgent
 from movia_sales_agent.config.paths import PROJECT_ROOT
 from movia_sales_agent.config.settings import Settings, get_settings
 from movia_sales_agent.models.schemas import ChatRequest, ChatResponse
+from movia_sales_agent.platform.registry_sync import sync_from_settings
 from movia_sales_agent.runtime.metadata import (
     compact_knowledge_plan,
     compact_lead_state,
@@ -24,11 +27,13 @@ from movia_sales_agent.whatsapp.queue import WhatsAppWorkerManager
 
 
 FRONTEND_ROOT = PROJECT_ROOT / "frontend"
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    app.state.platform_registry_sync = await sync_platform_registry_on_startup(settings)
     manager: Optional[WhatsAppWorkerManager] = None
     if settings.webhook_queue_enabled:
         manager = WhatsAppWorkerManager(
@@ -43,6 +48,24 @@ async def lifespan(app: FastAPI):
     finally:
         if manager:
             await manager.stop()
+
+
+async def sync_platform_registry_on_startup(settings: Settings) -> Dict[str, Any]:
+    if not settings.platform_registry_sync_on_startup:
+        return {"enabled": False, "status": "disabled"}
+    if not settings.platform_observability_enabled:
+        return {"enabled": False, "status": "platform_observability_disabled"}
+    try:
+        result = await asyncio.to_thread(sync_from_settings, settings, dry_run=False)
+        logger.info("Platform registry sync completed on startup: %s", result)
+        return {"enabled": True, "status": "success", "result": result}
+    except Exception as exc:
+        logger.exception("Platform registry sync failed on startup")
+        return {
+            "enabled": True,
+            "status": "failed",
+            "error": f"{type(exc).__name__}: {str(exc)[:500]}",
+        }
 
 
 app = FastAPI(title="MovIA Sales Agent", version="0.1.0", lifespan=lifespan)
@@ -119,6 +142,12 @@ def health(
         "job_concurrency": settings.job_concurrency,
         "lead_batch_window_seconds": settings.lead_batch_window_seconds,
         "platform_observability_enabled": settings.platform_observability_enabled,
+        "platform_registry_sync_on_startup": settings.platform_registry_sync_on_startup,
+        "platform_registry_sync_status": getattr(
+            getattr(app, "state", None),
+            "platform_registry_sync",
+            {"status": "not_started"},
+        ).get("status"),
         "platform_agent_key": settings.platform_agent_key,
         "platform_runtime_cache_seconds": settings.platform_runtime_cache_seconds,
         "debug_ui_enabled": settings.enable_debug_ui,

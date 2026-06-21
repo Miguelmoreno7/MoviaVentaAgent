@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from movia_sales_agent.agent.graph import MoviaSalesAgent
-from movia_sales_agent.api.main import app, get_agent, get_settings
+from movia_sales_agent.api.main import app, get_agent, get_settings, sync_platform_registry_on_startup
 from movia_sales_agent.config.settings import Settings
 
 
@@ -205,3 +206,61 @@ def test_whatsapp_webhook_fast_ack_queues_messages():
     assert first.json()["results"][0]["status"] == "queued"
     assert second.json()["results"][0]["status"] == "duplicate"
     app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_platform_registry_sync_runs_on_startup_when_enabled(monkeypatch):
+    settings = Settings(
+        DATABASE_URL=None,
+        OPENAI_API_KEY=None,
+        OPENAI_MODEL="offline",
+        MOVIA_DISABLE_OPENAI=True,
+        MOVIA_DISABLE_DATABASE=True,
+        REDIS_URL=None,
+        SUPABASE_URL="https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="service-role",
+        MOVIA_PLATFORM_OBSERVABILITY_ENABLED=True,
+        MOVIA_PLATFORM_REGISTRY_SYNC_ON_STARTUP=True,
+    )
+    calls = []
+
+    def fake_sync_from_settings(received_settings, *, dry_run=False):
+        calls.append({"settings": received_settings, "dry_run": dry_run})
+        return {"agents_processed": 1, "versions_processed": 1}
+
+    import movia_sales_agent.api.main as api_main
+
+    monkeypatch.setattr(api_main, "sync_from_settings", fake_sync_from_settings)
+
+    result = await sync_platform_registry_on_startup(settings)
+
+    assert result["status"] == "success"
+    assert calls == [{"settings": settings, "dry_run": False}]
+
+
+@pytest.mark.asyncio
+async def test_platform_registry_sync_startup_failure_does_not_crash(monkeypatch):
+    settings = Settings(
+        DATABASE_URL=None,
+        OPENAI_API_KEY=None,
+        OPENAI_MODEL="offline",
+        MOVIA_DISABLE_OPENAI=True,
+        MOVIA_DISABLE_DATABASE=True,
+        REDIS_URL=None,
+        SUPABASE_URL="https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="service-role",
+        MOVIA_PLATFORM_OBSERVABILITY_ENABLED=True,
+        MOVIA_PLATFORM_REGISTRY_SYNC_ON_STARTUP=True,
+    )
+
+    def fake_sync_from_settings(_settings, *, dry_run=False):
+        raise RuntimeError("platform unavailable")
+
+    import movia_sales_agent.api.main as api_main
+
+    monkeypatch.setattr(api_main, "sync_from_settings", fake_sync_from_settings)
+
+    result = await sync_platform_registry_on_startup(settings)
+
+    assert result["status"] == "failed"
+    assert "platform unavailable" in result["error"]

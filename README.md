@@ -96,6 +96,7 @@ MOVIA_PLATFORM_OBSERVABILITY_ENABLED=true
 MOVIA_PLATFORM_AGENT_KEY=movia_sales_agent
 MOVIA_PLATFORM_AGENT_VERSION=v1
 MOVIA_PLATFORM_RUNTIME_CACHE_SECONDS=30
+MOVIA_PLATFORM_REGISTRY_SYNC_ON_STARTUP=true
 AGENTS_REGISTRY_PATH=platform_registry/agents.json
 SYNC_TIMEOUT_SECONDS=20
 ```
@@ -108,6 +109,12 @@ run. Different leads can run concurrently up to `MOVIA_JOB_CONCURRENCY`.
 The service can register itself in the MovIA platform tables and report compact
 run observability for WhatsApp worker batches. Platform observability uses the
 same `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as the rest of the app.
+
+By default, `MOVIA_PLATFORM_REGISTRY_SYNC_ON_STARTUP=true` runs the registry
+sync once during API startup. This is intended for Dokploy deployments where
+you only click Deploy and do not have a separate shell step. Startup sync is
+best-effort: if it fails, the API still starts and `/health` reports
+`platform_registry_sync_status=failed`.
 
 Dry-run registry sync:
 
