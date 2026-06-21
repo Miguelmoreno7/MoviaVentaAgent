@@ -184,6 +184,18 @@ class SalesPolicyPlanner:
                 PlannerReasonCode.DIRECT_CLOSE_ALLOWED,
             ))
 
+        if _is_first_touch_greeting(state):
+            return _finalize_plan(state, make_plan(
+                MacroAction.ANSWER_AND_ADVANCE,
+                MicroAction.ANSWER_GENERAL_THEN_DISCOVER_NEED,
+                "Dar una bienvenida breve y abrir una ruta suave antes de discovery comercial.",
+                CTAType.SOFT_QUESTION,
+                SalesStage.NEW,
+                PlannerReasonCode.BUSINESS_TYPE_UNKNOWN,
+                next_question="¿Vienes buscando información general o quieres cotizar algo específico?",
+                next_question_key="entry_intent",
+            ))
+
         unavailable_plan = _unavailable_product_plan(state)
         if unavailable_plan:
             return _finalize_plan(state, unavailable_plan)
@@ -947,6 +959,64 @@ def _missing_core_discovery_key(state: PlannerState) -> Optional[str]:
     if not _known_action_requirement(state):
         return "action_requirement"
     return None
+
+
+def _is_first_touch_greeting(state: PlannerState) -> bool:
+    if state.analysis.primary_intent != Intent.GREETING.value:
+        return False
+    meaningful_topics = [topic for topic in state.analysis.topics if topic != Topic.UNKNOWN.value]
+    if meaningful_topics:
+        return False
+    if state.last_macro_action or state.last_micro_action or state.last_cta:
+        return False
+    current_stage = state.current_stage or state.lead_profile.get("current_stage")
+    if current_stage and current_stage != SalesStage.NEW.value:
+        return False
+    if state.previous_stage or state.active_objection:
+        return False
+    known_slots = (state.structured_memory or {}).get("known_slots") or {}
+    if known_slots:
+        return False
+    profile_data = state.lead_profile.get("profile_data") or {}
+    if profile_data.get("action_requirement") or profile_data.get("known_product_fit"):
+        return False
+    if _has_non_empty_requirement_profile(profile_data.get("requirement_profile")):
+        return False
+    if _has_non_empty_product_context(profile_data.get("product_context")):
+        return False
+    return True
+
+
+def _has_non_empty_requirement_profile(requirement_profile: Any) -> bool:
+    if not isinstance(requirement_profile, dict):
+        return False
+    if requirement_profile.get("requirement_class") not in {None, "", "unknown"}:
+        return True
+    if requirement_profile.get("declared_external_action_count") is not None:
+        return True
+    for key in (
+        "observed_business_problems",
+        "informational_capabilities",
+        "sales_capabilities",
+        "external_actions",
+    ):
+        if requirement_profile.get(key):
+            return True
+    return False
+
+
+def _has_non_empty_product_context(product_context: Any) -> bool:
+    if not isinstance(product_context, dict):
+        return False
+    return any(
+        product_context.get(key)
+        for key in (
+            "referenced_product",
+            "active_product_context",
+            "selected_product",
+            "confirmed_product",
+        )
+    )
 
 
 def _discovery_plan(missing_key: str) -> SalesPlan:

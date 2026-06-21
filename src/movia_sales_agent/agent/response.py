@@ -13,7 +13,7 @@ from movia_sales_agent.agent.requirements import (
     build_requirement_summary,
     ensure_requirement_profile,
 )
-from movia_sales_agent.contracts.commercial import CTAType, MacroAction, MicroAction, ObjectionType, Topic
+from movia_sales_agent.contracts.commercial import CTAType, Intent, MacroAction, MicroAction, ObjectionType, Topic
 from movia_sales_agent.ingestion.chunker import estimate_tokens
 from movia_sales_agent.models.schemas import SalesPlan, TurnAnalysis
 
@@ -186,6 +186,15 @@ def fallback_response(message: str, analysis: TurnAnalysis, sales_plan: SalesPla
             "Para no inventarte algo fuera del alcance de MovIA, necesito aterrizarlo a tu flujo. "
             "MovIA ayuda principalmente a responder, capturar datos y, en Híbrido, apoyar con acciones operativas acordadas. "
             "¿Qué parte de tu atención quieres automatizar primero?"
+        )
+
+    if (
+        analysis.primary_intent == Intent.GREETING.value
+        and sales_plan.micro_action == MicroAction.ANSWER_GENERAL_THEN_DISCOVER_NEED.value
+    ):
+        return (
+            "¡Hola! Soy el asistente de MovIA. Te puedo ayudar a ver si un agente para WhatsApp tiene sentido para tu negocio. "
+            "¿Vienes buscando información general o quieres cotizar algo específico?"
         )
 
     if Topic.PLATFORM_PROCESS.value in analysis.topics or sales_plan.macro_action == MacroAction.EXPLAIN_PROCESS.value:
