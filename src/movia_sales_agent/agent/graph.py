@@ -49,6 +49,7 @@ from movia_sales_agent.runtime.metadata import (
     compact_token_usage,
 )
 from movia_sales_agent.services.openai_service import OpenAIService
+from movia_sales_agent.services.openai_service import empty_usage
 from movia_sales_agent.services.purchase_status import PurchaseStatusService
 from movia_sales_agent.services.rag import RagService
 from movia_sales_agent.whatsapp.formatting import split_whatsapp_messages
@@ -432,13 +433,23 @@ class MoviaSalesAgent:
             BASE_SYSTEM_PROMPT,
             state["message"],
         )
-        response, usage = self.openai_service.generate_response_with_usage(
-            BASE_SYSTEM_PROMPT,
-            state["message"],
-            state["merged_context"],
-        )
+        deterministic_response = should_use_deterministic_response(state)
+        if deterministic_response:
+            response = fallback_response(
+                state["message"],
+                state["analysis"],
+                state["sales_plan"],
+                state["merged_context"],
+            )
+            usage = empty_usage("response", self.settings.response_model, "deterministic")
+        else:
+            response, usage = self.openai_service.generate_response_with_usage(
+                BASE_SYSTEM_PROMPT,
+                state["message"],
+                state["merged_context"],
+            )
         usage = attach_usage_details(usage, "response_package_estimates", package_estimates)
-        response_source = "openai" if response else "fallback"
+        response_source = "deterministic" if deterministic_response else ("openai" if response else "fallback")
         if not response:
             response = fallback_response(
                 state["message"],
@@ -535,6 +546,11 @@ class MoviaSalesAgent:
     def _stored_token_usage(self, state: AgentState) -> Dict[str, Any]:
         token_usage = state.get("token_usage", {})
         return token_usage if self.settings.debug_metadata else compact_token_usage(token_usage)
+
+
+def should_use_deterministic_response(state: AgentState) -> bool:
+    sales_plan = state.get("sales_plan")
+    return bool(sales_plan and getattr(sales_plan, "next_question_key", None) == "entry_intent")
 
 
 def merge_usage(existing: Dict[str, Any], usage: Dict[str, Any]) -> Dict[str, Any]:

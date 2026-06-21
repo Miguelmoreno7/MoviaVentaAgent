@@ -410,6 +410,8 @@ def test_first_touch_greeting_uses_warm_entry_policy():
     assert result.selected_action["next_question_key"] == "entry_intent"
     assert "Soy el asistente de MovIA" in result.response
     assert "cotizar algo específico" in result.response
+    assert "qué tipo de negocio tienes" not in result.response.lower()
+    assert result.response_metadata["response_source"] == "deterministic"
 
 
 def test_greeting_with_business_context_still_moves_to_discovery():
