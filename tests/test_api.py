@@ -2,8 +2,25 @@ from fastapi.testclient import TestClient
 import pytest
 
 from movia_sales_agent.agent.graph import MoviaSalesAgent
-from movia_sales_agent.api.main import app, get_agent, get_settings, sync_platform_registry_on_startup
+from movia_sales_agent.api.main import (
+    app,
+    get_agent,
+    get_settings,
+    get_whatsapp_client,
+    sync_platform_registry_on_startup,
+)
 from movia_sales_agent.config.settings import Settings
+from movia_sales_agent.whatsapp.client import WhatsAppClient
+
+
+class RecordingWhatsAppClient(WhatsAppClient):
+    def __init__(self, settings: Settings):
+        super().__init__(settings)
+        self.read_calls = []
+
+    def mark_read(self, message_id: str):
+        self.read_calls.append(message_id)
+        return {"mocked": True, "message_id": message_id, "typing_indicator": False}
 
 
 def make_test_settings() -> Settings:
@@ -176,6 +193,8 @@ def test_whatsapp_webhook_fast_ack_queues_messages():
     )
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_agent] = lambda: MoviaSalesAgent(settings)
+    whatsapp = RecordingWhatsAppClient(settings)
+    app.dependency_overrides[get_whatsapp_client] = lambda: whatsapp
     client = TestClient(app)
 
     inbound_payload = {
@@ -204,7 +223,10 @@ def test_whatsapp_webhook_fast_ack_queues_messages():
     assert first.status_code == 200
     assert first.json()["status"] == "accepted"
     assert first.json()["results"][0]["status"] == "queued"
+    assert first.json()["results"][0]["read_status"] == "success"
     assert second.json()["results"][0]["status"] == "duplicate"
+    assert second.json()["results"][0]["read_status"] == "success"
+    assert whatsapp.read_calls == ["wamid.queued.1", "wamid.queued.1"]
     app.dependency_overrides.clear()
 
 

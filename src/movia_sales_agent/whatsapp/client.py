@@ -90,8 +90,14 @@ class WhatsAppClient:
         return {"split": True, "count": len(results), "messages": results}
 
     def mark_read_with_typing(self, message_id: str) -> Dict[str, Any]:
+        return self._mark_read(message_id, include_typing=True)
+
+    def mark_read(self, message_id: str) -> Dict[str, Any]:
+        return self._mark_read(message_id, include_typing=False)
+
+    def _mark_read(self, message_id: str, *, include_typing: bool) -> Dict[str, Any]:
         if not self.enabled:
-            return {"mocked": True, "message_id": message_id, "typing_indicator": True}
+            return {"mocked": True, "message_id": message_id, "typing_indicator": include_typing}
         url = (
             "https://graph.facebook.com/v20.0/"
             f"{self.settings.meta_whatsapp_phone_number_id}/messages"
@@ -100,8 +106,9 @@ class WhatsAppClient:
             "messaging_product": "whatsapp",
             "status": "read",
             "message_id": message_id,
-            "typing_indicator": {"type": "text"},
         }
+        if include_typing:
+            payload["typing_indicator"] = {"type": "text"}
         headers = {
             "Authorization": f"Bearer {self.settings.meta_whatsapp_access_token}",
             "Content-Type": "application/json",
@@ -110,6 +117,20 @@ class WhatsAppClient:
             response = client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             return response.json()
+
+    def mark_messages_read(self, message_ids: Iterable[str]) -> Dict[str, Any]:
+        attempted = 0
+        succeeded = 0
+        failed = 0
+        for message_id in dict.fromkeys(message_ids):
+            attempted += 1
+            try:
+                self.mark_read(message_id)
+                succeeded += 1
+            except Exception as exc:
+                failed += 1
+                logger.warning("WhatsApp mark-read failed message_id=%s error=%s", message_id, exc)
+        return {"attempted": attempted, "succeeded": succeeded, "failed": failed}
 
     def mark_messages_read_with_typing(self, message_ids: Iterable[str]) -> Dict[str, Any]:
         attempted = 0

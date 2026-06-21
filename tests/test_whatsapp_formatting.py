@@ -156,6 +156,57 @@ def test_whatsapp_client_marks_read_with_typing_mocked_without_meta_credentials(
     assert result == {"attempted": 2, "succeeded": 2, "failed": 0}
 
 
+def test_whatsapp_client_marks_read_payload_without_typing(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"success": True}
+
+    class FakeHttpClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, headers, json):
+            calls.append({"url": url, "headers": headers, "json": json, "timeout": self.timeout})
+            return FakeResponse()
+
+    import movia_sales_agent.whatsapp.client as whatsapp_client
+
+    monkeypatch.setattr(whatsapp_client.httpx, "Client", FakeHttpClient)
+    client = WhatsAppClient(
+        Settings(
+            DATABASE_URL=None,
+            OPENAI_API_KEY=None,
+            OPENAI_MODEL="offline",
+            MOVIA_DISABLE_OPENAI=True,
+            MOVIA_DISABLE_DATABASE=True,
+            META_WHATSAPP_ACCESS_TOKEN="token",
+            META_WHATSAPP_PHONE_NUMBER_ID="phone-id",
+        )
+    )
+
+    result = client.mark_read("wamid.1")
+
+    assert result == {"success": True}
+    assert calls[0]["url"] == "https://graph.facebook.com/v20.0/phone-id/messages"
+    assert calls[0]["headers"]["Authorization"] == "Bearer token"
+    assert calls[0]["json"] == {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": "wamid.1",
+    }
+
+
 def test_whatsapp_client_marks_read_with_typing_payload(monkeypatch):
     calls = []
 
@@ -198,8 +249,6 @@ def test_whatsapp_client_marks_read_with_typing_payload(monkeypatch):
     result = client.mark_read_with_typing("wamid.1")
 
     assert result == {"success": True}
-    assert calls[0]["url"] == "https://graph.facebook.com/v20.0/phone-id/messages"
-    assert calls[0]["headers"]["Authorization"] == "Bearer token"
     assert calls[0]["json"] == {
         "messaging_product": "whatsapp",
         "status": "read",

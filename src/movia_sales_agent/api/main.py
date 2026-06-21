@@ -191,18 +191,34 @@ async def receive_whatsapp(
             await manager.start()
         for inbound in inbound_messages:
             enqueue_status = await manager.enqueue(inbound)
+            read_result = mark_inbound_read(client, inbound.message_id)
             logger.info(
-                "whatsapp_webhook_enqueue message_id=%s status=%s",
+                "whatsapp_webhook_enqueue message_id=%s status=%s read_status=%s",
                 inbound.message_id,
                 enqueue_status,
+                read_result.get("status"),
             )
-            results.append({"message_id": inbound.message_id, "status": enqueue_status})
+            results.append(
+                {
+                    "message_id": inbound.message_id,
+                    "status": enqueue_status,
+                    "read_status": read_result.get("status"),
+                }
+            )
         return {"status": "accepted", "queued": len(results), "results": results}
 
     for inbound in inbound_messages:
         if agent.repository.message_exists(inbound.message_id):
-            results.append({"message_id": inbound.message_id, "status": "duplicate"})
+            read_result = mark_inbound_read(client, inbound.message_id)
+            results.append(
+                {
+                    "message_id": inbound.message_id,
+                    "status": "duplicate",
+                    "read_status": read_result.get("status"),
+                }
+            )
             continue
+        mark_inbound_read(client, inbound.message_id)
         response = await run_agent_and_send(agent, client, inbound)
         results.append(
             {
@@ -213,6 +229,16 @@ async def receive_whatsapp(
             }
         )
     return {"status": "ok", "processed": len(results), "results": results}
+
+
+def mark_inbound_read(client: WhatsAppClient, message_id: str) -> Dict[str, Any]:
+    try:
+        result = client.mark_read(message_id)
+        logger.info("whatsapp_webhook_mark_read message_id=%s status=success", message_id)
+        return {"status": "success", "result": result}
+    except Exception as exc:
+        logger.warning("whatsapp_webhook_mark_read message_id=%s status=failed error=%s", message_id, exc)
+        return {"status": "failed", "error": str(exc)}
 
 
 async def run_agent_and_send(
