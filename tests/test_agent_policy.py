@@ -423,7 +423,7 @@ def test_greeting_with_business_context_still_moves_to_discovery():
     assert "Soy el asistente de MovIA" not in result.response
 
 
-def test_returning_lead_greeting_does_not_repeat_warm_entry_policy():
+def test_repeated_greeting_without_context_keeps_warm_entry_policy():
     agent = MoviaSalesAgent(offline_settings())
     lead_id = "warm-entry-returning-lead"
 
@@ -431,8 +431,22 @@ def test_returning_lead_greeting_does_not_repeat_warm_entry_policy():
     second = agent.invoke("Hola", lead_external_id=lead_id)
 
     assert first.selected_action["next_question_key"] == "entry_intent"
-    assert second.selected_action["next_question_key"] != "entry_intent"
-    assert "Soy el asistente de MovIA" not in second.response
+    assert second.selected_action["next_question_key"] == "entry_intent"
+    assert "Soy el asistente de MovIA" in second.response
+
+
+def test_greeting_after_business_context_does_not_reset_to_warm_entry():
+    agent = MoviaSalesAgent(offline_settings())
+    lead_id = "warm-entry-substantive-returning-lead"
+
+    agent.invoke(
+        "Tengo una clínica dental, por WhatsApp preguntan precio y luego desaparecen.",
+        lead_external_id=lead_id,
+    )
+    returning = agent.invoke("Hola", lead_external_id=lead_id)
+
+    assert returning.selected_action["next_question_key"] != "entry_intent"
+    assert "Soy el asistente de MovIA" not in returning.response
 
 
 def test_phase3_discovery_happens_when_action_requirement_is_unknown():

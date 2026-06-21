@@ -967,12 +967,10 @@ def _is_first_touch_greeting(state: PlannerState) -> bool:
     meaningful_topics = [topic for topic in state.analysis.topics if topic != Topic.UNKNOWN.value]
     if meaningful_topics:
         return False
-    if state.last_macro_action or state.last_micro_action or state.last_cta:
-        return False
     current_stage = state.current_stage or state.lead_profile.get("current_stage")
-    if current_stage and current_stage != SalesStage.NEW.value:
+    if current_stage and current_stage not in {SalesStage.NEW.value, SalesStage.UNKNOWN_RECOVERY.value}:
         return False
-    if state.previous_stage or state.active_objection:
+    if _has_meaningful_active_objection(state.active_objection):
         return False
     known_slots = (state.structured_memory or {}).get("known_slots") or {}
     if known_slots:
@@ -985,6 +983,16 @@ def _is_first_touch_greeting(state: PlannerState) -> bool:
     if _has_non_empty_product_context(profile_data.get("product_context")):
         return False
     return True
+
+
+def _has_meaningful_active_objection(active_objection: Any) -> bool:
+    if not isinstance(active_objection, dict):
+        return False
+    return bool(
+        active_objection.get("active")
+        or active_objection.get("paused")
+        or active_objection.get("status") in {ObjectionStatus.ACTIVE.value, ObjectionStatus.PAUSED.value}
+    )
 
 
 def _has_non_empty_requirement_profile(requirement_profile: Any) -> bool:
