@@ -193,7 +193,8 @@ def fallback_response(message: str, analysis: TurnAnalysis, sales_plan: SalesPla
         and sales_plan.micro_action == MicroAction.ANSWER_GENERAL_THEN_DISCOVER_NEED.value
     ):
         return (
-            "¡Hola! Soy el asistente de MovIA. Te puedo ayudar a ver si un agente para WhatsApp tiene sentido para tu negocio. "
+            "¡Hola! Soy el asistente de MovIA.\n\n"
+            "Te puedo ayudar a ver si un agente para WhatsApp tiene sentido para tu negocio.\n\n"
             "¿Vienes buscando información general o quieres cotizar algo específico?"
         )
 
