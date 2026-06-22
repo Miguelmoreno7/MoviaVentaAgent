@@ -9,6 +9,11 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
 from movia_sales_agent.agent.graph import MoviaSalesAgent
+from movia_sales_agent.chatwoot.client import (
+    ChatwootClient,
+    ChatwootConversation,
+    ChatwootSendError,
+)
 from movia_sales_agent.config.settings import Settings
 from movia_sales_agent.platform.observability import (
     PlatformObservabilityService,
@@ -234,11 +239,16 @@ class WhatsAppWorkerManager:
         client: WhatsAppClient,
         queue: Optional[WhatsAppQueue] = None,
         observability: Optional[PlatformObservabilityService] = None,
+        chatwoot_client: Optional[ChatwootClient] = None,
     ) -> None:
         self.settings = settings
         self.agent = agent
         self.client = client
         self.queue = queue or build_queue(settings)
+        self.chatwoot_client = chatwoot_client or ChatwootClient(
+            settings,
+            repository=getattr(agent, "repository", None),
+        )
         self.observability = observability or PlatformObservabilityService.from_settings(
             settings,
             memory=getattr(agent, "memory", None),
@@ -403,14 +413,18 @@ class WhatsAppWorkerManager:
                 "Agent execution completed.",
                 {"action": response.action, "message_count": len(response.response_messages)},
             )
-            self._add_run_event(run_id, "info", "whatsapp_send_started", "WhatsApp send started.", {})
-            self.client.send_text(first.from_number, response.response)
+            self._add_run_event(run_id, "info", "whatsapp_send_started", "Outbound send started.", {})
+            send_result = self._send_agent_response(first.from_number, response)
             self._add_run_event(
                 run_id,
                 "info",
                 "whatsapp_send_completed",
-                "WhatsApp send completed.",
-                {"message_count": len(response.response_messages)},
+                "Outbound send completed.",
+                {
+                    "message_count": len(response.response_messages),
+                    "transport": send_result.get("transport"),
+                    "fallback_used": send_result.get("fallback_used", False),
+                },
             )
             duration_ms = int((time.time() - started_at) * 1000)
             output_json = response_output_json(response, debug_metadata=self.settings.debug_metadata)
@@ -448,6 +462,63 @@ class WhatsAppWorkerManager:
                     payload_json={"error": f"{type(exc).__name__}: {str(exc)[:500]}"},
                 )
             raise
+
+    def _send_agent_response(self, to_number: str, response: Any) -> Dict[str, Any]:
+        messages = list(response.response_messages or []) or [response.response]
+        conversation: Optional[ChatwootConversation] = None
+        if self.chatwoot_client.enabled:
+            try:
+                conversation = self.chatwoot_client.resolve_conversation_for_lead(
+                    lead_id=getattr(response, "lead_id", None),
+                    whatsapp_number=to_number,
+                )
+                if conversation:
+                    result = self.chatwoot_client.send_public_messages(conversation, messages)
+                    return {**result, "fallback_used": False}
+                logger.warning("Chatwoot conversation not found; falling back to WhatsApp API")
+            except ChatwootSendError as exc:
+                if exc.sent_count > 0:
+                    logger.warning(
+                        "Chatwoot public outbound failed after %s accepted messages; "
+                        "not falling back to WhatsApp to avoid duplicates: %s",
+                        exc.sent_count,
+                        exc.original,
+                    )
+                    return {
+                        "transport": "chatwoot_partial",
+                        "fallback_used": False,
+                        "chatwoot_sent_count": exc.sent_count,
+                        "error": str(exc.original),
+                    }
+                logger.warning(
+                    "Chatwoot public outbound failed before any message was accepted; "
+                    "falling back to WhatsApp API: %s",
+                    exc.original,
+                )
+            except Exception as exc:
+                logger.warning("Chatwoot public outbound failed; falling back to WhatsApp API: %s", exc)
+
+        whatsapp_result = self.client.send_text(to_number, response.response)
+        fallback_result: Dict[str, Any] = {
+            "transport": "whatsapp",
+            "fallback_used": bool(self.chatwoot_client.enabled),
+            "whatsapp_result": whatsapp_result,
+        }
+        if conversation:
+            note = (
+                "MovIA fallback sent this response directly through WhatsApp API after "
+                "Chatwoot public outbound failed:\n\n"
+                f"{response.response}"
+            )
+            try:
+                fallback_result["chatwoot_private_note"] = self.chatwoot_client.send_private_note(
+                    conversation,
+                    note,
+                )
+            except Exception as exc:
+                logger.warning("Chatwoot fallback private note failed: %s", exc)
+                fallback_result["chatwoot_private_note_error"] = str(exc)
+        return fallback_result
 
     def _record_queue_event(self, event_type: str, message: str, payload: Dict[str, Any]) -> None:
         logger.info("%s: %s %s", event_type, message, payload)

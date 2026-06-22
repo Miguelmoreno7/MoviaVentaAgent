@@ -37,6 +37,9 @@ def make_test_settings() -> Settings:
         MOVIA_WEBHOOK_QUEUE_ENABLED=False,
         MOVIA_LEAD_BATCH_WINDOW_SECONDS=0,
         MOVIA_PLATFORM_OBSERVABILITY_ENABLED=False,
+        CHATWOOT_URL=None,
+        CHATWOOT_API_TOKEN=None,
+        CHATWOOT_ACCOUNT_ID=None,
     )
 
 
@@ -100,6 +103,9 @@ def test_debug_ui_can_be_disabled():
         MOVIA_ENABLE_DEBUG_UI=False,
         MOVIA_WEBHOOK_QUEUE_ENABLED=False,
         MOVIA_PLATFORM_OBSERVABILITY_ENABLED=False,
+        CHATWOOT_URL=None,
+        CHATWOOT_API_TOKEN=None,
+        CHATWOOT_ACCOUNT_ID=None,
     )
     app.dependency_overrides[get_settings] = lambda: settings
     client = TestClient(app)
@@ -122,6 +128,9 @@ def test_chat_compacts_metadata_when_debug_metadata_is_disabled():
         MOVIA_DEBUG_METADATA=False,
         MOVIA_WEBHOOK_QUEUE_ENABLED=False,
         MOVIA_PLATFORM_OBSERVABILITY_ENABLED=False,
+        CHATWOOT_URL=None,
+        CHATWOOT_API_TOKEN=None,
+        CHATWOOT_ACCOUNT_ID=None,
     )
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_agent] = lambda: MoviaSalesAgent(settings)
@@ -190,6 +199,9 @@ def test_whatsapp_webhook_fast_ack_queues_messages():
         MOVIA_WEBHOOK_QUEUE_ENABLED=True,
         MOVIA_LEAD_BATCH_WINDOW_SECONDS=0,
         MOVIA_PLATFORM_OBSERVABILITY_ENABLED=False,
+        CHATWOOT_URL=None,
+        CHATWOOT_API_TOKEN=None,
+        CHATWOOT_ACCOUNT_ID=None,
     )
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_agent] = lambda: MoviaSalesAgent(settings)
@@ -242,6 +254,9 @@ def test_whatsapp_webhook_accepts_n8n_wrapped_body_payload():
         MOVIA_WEBHOOK_QUEUE_ENABLED=True,
         MOVIA_LEAD_BATCH_WINDOW_SECONDS=0,
         MOVIA_PLATFORM_OBSERVABILITY_ENABLED=False,
+        CHATWOOT_URL=None,
+        CHATWOOT_API_TOKEN=None,
+        CHATWOOT_ACCOUNT_ID=None,
     )
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_agent] = lambda: MoviaSalesAgent(settings)

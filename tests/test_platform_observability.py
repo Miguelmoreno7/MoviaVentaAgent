@@ -33,6 +33,9 @@ def platform_settings(**overrides):
         "MOVIA_WEBHOOK_QUEUE_ENABLED": True,
         "MOVIA_JOB_CONCURRENCY": 1,
         "MOVIA_LEAD_BATCH_WINDOW_SECONDS": 0,
+        "CHATWOOT_URL": None,
+        "CHATWOOT_API_TOKEN": None,
+        "CHATWOOT_ACCOUNT_ID": None,
     }
     values.update(overrides)
     return Settings(**values)

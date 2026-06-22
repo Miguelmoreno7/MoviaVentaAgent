@@ -10,8 +10,9 @@ from movia_sales_agent.whatsapp.queue import InMemoryWhatsAppQueue, WhatsAppWork
 
 
 class FakeAgent:
-    def __init__(self, delay: float = 0.0):
+    def __init__(self, delay: float = 0.0, response_messages=None):
         self.delay = delay
+        self.response_messages = response_messages
         self.calls = []
         self.starts = []
 
@@ -30,7 +31,7 @@ class FakeAgent:
         return SimpleNamespace(
             action="answer_and_advance",
             response=f"respuesta para {lead_external_id}",
-            response_messages=[f"respuesta para {lead_external_id}"],
+            response_messages=self.response_messages or [f"respuesta para {lead_external_id}"],
             response_metadata={"response_source": "fake"},
             token_usage={"total": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}},
         )
@@ -63,6 +64,9 @@ def queue_settings(**overrides):
         "MOVIA_JOB_CONCURRENCY": 2,
         "MOVIA_LEAD_BATCH_WINDOW_SECONDS": 0.05,
         "MOVIA_PLATFORM_OBSERVABILITY_ENABLED": False,
+        "CHATWOOT_URL": None,
+        "CHATWOOT_API_TOKEN": None,
+        "CHATWOOT_ACCOUNT_ID": None,
     }
     values.update(overrides)
     return Settings(**values)
@@ -123,6 +127,77 @@ async def test_duplicate_message_id_is_not_queued_twice():
     assert await queue.enqueue(to_queued(message)) == "duplicate"
 
 
+@pytest.mark.asyncio
+async def test_worker_sends_agent_response_through_chatwoot_when_conversation_resolves():
+    agent = FakeAgent()
+    client = FakeClient()
+    chatwoot = FakeChatwootClient()
+    manager = WhatsAppWorkerManager(
+        settings=queue_settings(MOVIA_LEAD_BATCH_WINDOW_SECONDS=0),
+        agent=agent,
+        client=client,
+        queue=InMemoryWhatsAppQueue(),
+        chatwoot_client=chatwoot,
+    )
+    await manager.start()
+    try:
+        await manager.enqueue(WhatsAppMessage("m1", "lead-a", "Hola"))
+        await wait_for(lambda: len(chatwoot.public_messages) == 1)
+    finally:
+        await manager.stop()
+
+    assert client.sent == []
+    assert chatwoot.resolved_numbers == ["lead-a"]
+    assert chatwoot.public_messages[0]["conversation_id"] == 66
+    assert chatwoot.public_messages[0]["messages"] == ["respuesta para lead-a"]
+
+
+@pytest.mark.asyncio
+async def test_worker_falls_back_to_whatsapp_and_private_note_when_chatwoot_public_send_fails():
+    agent = FakeAgent()
+    client = FakeClient()
+    chatwoot = FakeChatwootClient(fail_public=True)
+    manager = WhatsAppWorkerManager(
+        settings=queue_settings(MOVIA_LEAD_BATCH_WINDOW_SECONDS=0),
+        agent=agent,
+        client=client,
+        queue=InMemoryWhatsAppQueue(),
+        chatwoot_client=chatwoot,
+    )
+    await manager.start()
+    try:
+        await manager.enqueue(WhatsAppMessage("m1", "lead-a", "Hola"))
+        await wait_for(lambda: len(client.sent) == 1 and len(chatwoot.private_notes) == 1)
+    finally:
+        await manager.stop()
+
+    assert client.sent == [{"to": "lead-a", "text": "respuesta para lead-a"}]
+    assert "fallback sent" in chatwoot.private_notes[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_worker_does_not_whatsapp_fallback_after_partial_chatwoot_send():
+    agent = FakeAgent(response_messages=["parte 1", "parte 2"])
+    client = FakeClient()
+    chatwoot = FakeChatwootClient(partial_public_failure=True)
+    manager = WhatsAppWorkerManager(
+        settings=queue_settings(MOVIA_LEAD_BATCH_WINDOW_SECONDS=0),
+        agent=agent,
+        client=client,
+        queue=InMemoryWhatsAppQueue(),
+        chatwoot_client=chatwoot,
+    )
+    await manager.start()
+    try:
+        await manager.enqueue(WhatsAppMessage("m1", "lead-a", "Hola"))
+        await wait_for(lambda: len(agent.calls) == 1 and chatwoot.partial_attempted)
+    finally:
+        await manager.stop()
+
+    assert client.sent == []
+    assert chatwoot.private_notes == []
+
+
 def test_build_queue_falls_back_when_redis_is_unreachable():
     settings = queue_settings(REDIS_URL="redis://unreachable-redis-host:6379/0")
 
@@ -149,3 +224,49 @@ async def wait_for(predicate, timeout=1.0):
             return
         await asyncio.sleep(0.01)
     raise AssertionError("condition was not met before timeout")
+
+
+class FakeChatwootClient:
+    enabled = True
+
+    def __init__(self, fail_public=False, partial_public_failure=False):
+        self.fail_public = fail_public
+        self.partial_public_failure = partial_public_failure
+        self.partial_attempted = False
+        self.resolved_numbers = []
+        self.public_messages = []
+        self.private_notes = []
+
+    def resolve_conversation_for_lead(self, *, lead_id, whatsapp_number):
+        self.resolved_numbers.append(whatsapp_number)
+        from movia_sales_agent.chatwoot.client import ChatwootConversation
+
+        return ChatwootConversation(account_id=2, conversation_id=66)
+
+    def send_public_messages(self, conversation, messages):
+        if self.fail_public:
+            raise RuntimeError("chatwoot failed")
+        messages = list(messages)
+        if self.partial_public_failure:
+            self.partial_attempted = True
+            from movia_sales_agent.chatwoot.client import ChatwootSendError
+
+            raise ChatwootSendError(
+                "partial chatwoot failure",
+                sent_count=1,
+                original=RuntimeError("second part failed"),
+            )
+        self.public_messages.append(
+            {"conversation_id": conversation.conversation_id, "messages": messages}
+        )
+        return {
+            "transport": "chatwoot",
+            "conversation_id": conversation.conversation_id,
+            "count": len(messages),
+        }
+
+    def send_private_note(self, conversation, content):
+        self.private_notes.append(
+            {"conversation_id": conversation.conversation_id, "content": content}
+        )
+        return {"transport": "chatwoot_private_note"}

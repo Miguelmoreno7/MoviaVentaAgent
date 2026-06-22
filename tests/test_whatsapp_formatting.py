@@ -3,6 +3,21 @@ from movia_sales_agent.whatsapp.client import WhatsAppClient
 from movia_sales_agent.config.settings import Settings
 
 
+def mocked_settings() -> Settings:
+    return Settings(
+        DATABASE_URL=None,
+        OPENAI_API_KEY=None,
+        OPENAI_MODEL="offline",
+        MOVIA_DISABLE_OPENAI=True,
+        MOVIA_DISABLE_DATABASE=True,
+        META_WHATSAPP_ACCESS_TOKEN=None,
+        META_WHATSAPP_PHONE_NUMBER_ID=None,
+        CHATWOOT_URL=None,
+        CHATWOOT_API_TOKEN=None,
+        CHATWOOT_ACCOUNT_ID=None,
+    )
+
+
 def test_short_message_stays_single_part():
     parts = split_whatsapp_messages("Hola, puedo ayudarte con MovIA Captura.")
 
@@ -52,15 +67,7 @@ def test_short_intro_can_merge_past_soft_limit_when_under_hard_limit():
 
 
 def test_whatsapp_client_sends_split_messages_in_order_when_mocked():
-    client = WhatsAppClient(
-        Settings(
-            DATABASE_URL=None,
-            OPENAI_API_KEY=None,
-            OPENAI_MODEL="offline",
-            MOVIA_DISABLE_OPENAI=True,
-            MOVIA_DISABLE_DATABASE=True,
-        )
-    )
+    client = WhatsAppClient(mocked_settings())
     text = ("MovIA puede ayudarte a responder mejor en WhatsApp. " * 30).strip()
 
     result = client.send_text("5218180000000", text)
@@ -72,15 +79,7 @@ def test_whatsapp_client_sends_split_messages_in_order_when_mocked():
 
 
 def test_whatsapp_client_parses_n8n_wrapped_body_payload():
-    client = WhatsAppClient(
-        Settings(
-            DATABASE_URL=None,
-            OPENAI_API_KEY=None,
-            OPENAI_MODEL="offline",
-            MOVIA_DISABLE_OPENAI=True,
-            MOVIA_DISABLE_DATABASE=True,
-        )
-    )
+    client = WhatsAppClient(mocked_settings())
 
     messages = client.parse_messages(
         [
@@ -110,15 +109,7 @@ def test_whatsapp_client_parses_n8n_wrapped_body_payload():
 
 
 def test_whatsapp_client_parses_direct_body_messages_payload():
-    client = WhatsAppClient(
-        Settings(
-            DATABASE_URL=None,
-            OPENAI_API_KEY=None,
-            OPENAI_MODEL="offline",
-            MOVIA_DISABLE_OPENAI=True,
-            MOVIA_DISABLE_DATABASE=True,
-        )
-    )
+    client = WhatsAppClient(mocked_settings())
 
     messages = client.parse_messages(
         {
@@ -141,15 +132,7 @@ def test_whatsapp_client_parses_direct_body_messages_payload():
 
 
 def test_whatsapp_client_marks_read_with_typing_mocked_without_meta_credentials():
-    client = WhatsAppClient(
-        Settings(
-            DATABASE_URL=None,
-            OPENAI_API_KEY=None,
-            OPENAI_MODEL="offline",
-            MOVIA_DISABLE_OPENAI=True,
-            MOVIA_DISABLE_DATABASE=True,
-        )
-    )
+    client = WhatsAppClient(mocked_settings())
 
     result = client.mark_messages_read_with_typing(["wamid.1", "wamid.1", "wamid.2"])
 

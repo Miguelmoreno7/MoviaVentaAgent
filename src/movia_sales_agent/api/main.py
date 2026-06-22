@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse
 
 from movia_sales_agent.agent.graph import MoviaSalesAgent
+from movia_sales_agent.chatwoot.client import ChatwootClient, ChatwootSendError
 from movia_sales_agent.config.paths import PROJECT_ROOT
 from movia_sales_agent.config.settings import Settings, get_settings
 from movia_sales_agent.models.schemas import ChatRequest, ChatResponse
@@ -219,7 +220,7 @@ async def receive_whatsapp(
             )
             continue
         mark_inbound_read(client, inbound.message_id)
-        response = await run_agent_and_send(agent, client, inbound)
+        response = await run_agent_and_send(agent, client, inbound, settings)
         results.append(
             {
                 "message_id": inbound.message_id,
@@ -245,6 +246,7 @@ async def run_agent_and_send(
     agent: MoviaSalesAgent,
     client: WhatsAppClient,
     inbound: Any,
+    settings: Settings,
 ) -> ChatResponse:
     import asyncio
 
@@ -255,7 +257,48 @@ async def run_agent_and_send(
             channel="whatsapp",
             external_message_id=inbound.message_id,
         )
+        chatwoot = ChatwootClient(settings, repository=getattr(agent, "repository", None))
+        conversation = None
+        if chatwoot.enabled:
+            try:
+                conversation = chatwoot.resolve_conversation_for_lead(
+                    lead_id=response.lead_id,
+                    whatsapp_number=inbound.from_number,
+                )
+                if conversation:
+                    chatwoot.send_public_messages(
+                        conversation,
+                        list(response.response_messages or []) or [response.response],
+                    )
+                    return response
+            except ChatwootSendError as exc:
+                if exc.sent_count > 0:
+                    logger.warning(
+                        "Chatwoot outbound failed after %s accepted messages in direct webhook path; "
+                        "not falling back to WhatsApp to avoid duplicates: %s",
+                        exc.sent_count,
+                        exc.original,
+                    )
+                    return response
+                logger.warning(
+                    "Chatwoot outbound failed before accepting a message in direct webhook path: %s",
+                    exc.original,
+                )
+            except Exception as exc:
+                logger.warning("Chatwoot outbound failed in direct webhook path: %s", exc)
         client.send_text(inbound.from_number, response.response)
+        if conversation:
+            try:
+                chatwoot.send_private_note(
+                    conversation,
+                    (
+                        "MovIA fallback sent this response directly through WhatsApp API after "
+                        "Chatwoot public outbound failed:\n\n"
+                        f"{response.response}"
+                    ),
+                )
+            except Exception as exc:
+                logger.warning("Chatwoot fallback private note failed in direct webhook path: %s", exc)
         return response
 
     return await asyncio.to_thread(_run)

@@ -122,6 +122,7 @@ class MoviaRepository:
                     "stage_updated_at": now,
                     "active_objection": {},
                     "last_action": None,
+                    "chatwoot_conversation_id": None,
                     "profile_data": {},
                 }
                 self._offline_leads_by_id[lead_id] = self._offline_leads[key]
@@ -266,6 +267,41 @@ class MoviaRepository:
             lead["active_objection"] = dict(active_objection)
         if last_action:
             lead["last_action"] = last_action
+
+    def get_lead_profile(self, lead_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not lead_id:
+            return None
+        if not self.enabled:
+            lead = self._offline_leads_by_id.get(lead_id)
+            return copy_lead(lead) if lead else None
+        with self.connect() as conn:
+            row = conn.execute(
+                "select * from public.movia_lead_profiles where id = %s",
+                (lead_id,),
+            ).fetchone()
+        return row
+
+    def update_chatwoot_conversation_id(
+        self,
+        lead_id: Optional[str],
+        conversation_id: Optional[int],
+    ) -> None:
+        if not lead_id or not conversation_id:
+            return
+        if not self.enabled:
+            lead = self._offline_leads_by_id.get(lead_id)
+            if lead is not None:
+                lead["chatwoot_conversation_id"] = int(conversation_id)
+            return
+        with self.connect() as conn:
+            conn.execute(
+                """
+                update public.movia_lead_profiles
+                set chatwoot_conversation_id = %s
+                where id = %s
+                """,
+                (int(conversation_id), lead_id),
+            )
 
     def load_recent_messages(self, lead_id: Optional[str], limit: int = 8) -> List[Dict[str, Any]]:
         if not self.enabled or not lead_id:

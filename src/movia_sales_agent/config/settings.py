@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     meta_whatsapp_phone_number_id: Optional[str] = Field(
         default=None, alias="META_WHATSAPP_PHONE_NUMBER_ID"
     )
+    chatwoot_url: Optional[str] = Field(default=None, alias="CHATWOOT_URL")
+    chatwoot_api_token: Optional[str] = Field(default=None, alias="CHATWOOT_API_TOKEN")
+    chatwoot_account_id: Optional[int] = Field(default=None, alias="CHATWOOT_ACCOUNT_ID")
     disable_openai: bool = Field(default=False, alias="MOVIA_DISABLE_OPENAI")
     disable_database: bool = Field(default=False, alias="MOVIA_DISABLE_DATABASE")
 
@@ -83,6 +86,10 @@ class Settings(BaseSettings):
     @property
     def whatsapp_enabled(self) -> bool:
         return bool(self.meta_whatsapp_access_token and self.meta_whatsapp_phone_number_id)
+
+    @property
+    def chatwoot_enabled(self) -> bool:
+        return bool(self.chatwoot_url and self.chatwoot_api_token)
 
     @property
     def agents_registry_path(self) -> Path:
