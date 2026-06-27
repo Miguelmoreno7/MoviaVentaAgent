@@ -11,7 +11,7 @@ Disponible.
 ### Precio
 
 - Setup: $4,900 MXN
-- Mensualidad: $450 MXN
+- Mensualidad: $500 MXN
 - Tiempo estimado de entrega: 3 a 5 días hábiles
 - Juntas incluidas:
   - Hasta 2 juntas de 1 hora antes del release.
@@ -101,7 +101,7 @@ Disponible.
 ### Precio
 
 - Setup: $7,500 MXN
-- Mensualidad: $550 MXN
+- Mensualidad: $500 MXN
 - Tiempo estimado de entrega: 5 a 10 días hábiles
 - Juntas incluidas:
   - Hasta 2 juntas de 1 hora antes del release.

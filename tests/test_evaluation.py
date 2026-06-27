@@ -82,13 +82,13 @@ def current_ground_truth():
                 "name": "MovIA Captura",
                 "status": "available",
                 "setup_price_mxn": 4900,
-                "monthly_price_mxn": 450,
+                "monthly_price_mxn": 500,
             },
             {
                 "name": "MovIA Híbrido",
                 "status": "available",
                 "setup_price_mxn": 7500,
-                "monthly_price_mxn": 550,
+                "monthly_price_mxn": 500,
             },
             {
                 "name": "Agente MovIA Ventas",

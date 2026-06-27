@@ -39,8 +39,8 @@ Por eso, la separación entre Captura, Híbrido, Ventas y Pro Comercial debe ser
 
 Usar “desde” en todos los precios:
 
-- MovIA Captura: desde $4,900 setup + $450/mes.
-- MovIA Híbrido: desde $7,500 setup + $550/mes.
+- MovIA Captura: desde $4,900 setup + $500/mes.
+- MovIA Híbrido: desde $7,500 setup + $500/mes.
 - MovIA Ventas: desde $13,500 setup + $1,000/mes. Aún no disponible.
 - MovIA Pro Comercial: desde $25,000 setup + $2,000/mes. Aún no disponible.
 

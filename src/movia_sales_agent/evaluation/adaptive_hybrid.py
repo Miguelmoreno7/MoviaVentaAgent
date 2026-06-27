@@ -972,8 +972,6 @@ def _commercial_fact_error(text: str) -> bool:
     wrong_price_patterns = [
         r"captura[^.]{0,80}\$?\s*7[,\.]?500",
         r"h[ií]brido[^.]{0,80}\$?\s*4[,\.]?900",
-        r"mensualidad[^.]{0,50}captura[^.]{0,50}\$?\s*550",
-        r"mensualidad[^.]{0,50}h[ií]brido[^.]{0,50}\$?\s*450",
     ]
     if any(re.search(pattern, text) for pattern in wrong_price_patterns):
         return True

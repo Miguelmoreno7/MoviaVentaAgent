@@ -312,7 +312,7 @@ def evaluate_turn(record: Dict[str, Any]) -> List[Dict[str, str]]:
                 violations.append(v("product_capability_routing_miss", "Price turn did not load products."))
             if product_state.get("selected_product"):
                 violations.append(v("premature_selected_product_assignment", "Híbrido price question selected the product."))
-            if not contains_amount(text, 7500) or not contains_amount(text, 550):
+            if not contains_amount(text, 7500) or not contains_amount(text, 500):
                 violations.append(v("deposit_setup_composition_error", "Híbrido price response missed setup or monthly price."))
         elif turn_id == 2:
             if not {"product_pricing", "official_policy", "platform_steps"} <= needs:
@@ -337,7 +337,7 @@ def evaluate_turn(record: Dict[str, Any]) -> List[Dict[str, str]]:
                 violations.append(v("premature_selected_product_assignment", "Captura was selected during price question."))
             if action.get("macro_action") == MacroAction.DIRECT_CLOSE.value:
                 violations.append(v("premature_selected_product_assignment", "Price question triggered direct close."))
-            if not contains_amount(text, 4900) or not contains_amount(text, 450):
+            if not contains_amount(text, 4900) or not contains_amount(text, 500):
                 violations.append(v("deposit_setup_composition_error", "Captura price response missed setup or monthly price."))
         elif turn_id == 2:
             analysis = record.get("analysis") or {}
