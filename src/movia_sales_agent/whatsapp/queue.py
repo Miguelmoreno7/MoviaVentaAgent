@@ -15,6 +15,7 @@ from movia_sales_agent.chatwoot.client import (
     ChatwootSendError,
 )
 from movia_sales_agent.config.settings import Settings
+from movia_sales_agent.meta.conversions import MetaConversionsService
 from movia_sales_agent.platform.observability import (
     PlatformObservabilityService,
     batch_input_json,
@@ -36,6 +37,9 @@ class QueuedWhatsAppMessage:
     from_number: str
     text: str
     channel: str = "whatsapp"
+    ctwa_clid: Optional[str] = None
+    referral: Optional[Dict[str, Any]] = None
+    timestamp: Optional[str] = None
 
     @property
     def lead_key(self) -> str:
@@ -145,6 +149,9 @@ class RedisWhatsAppQueue:
             "from_number": message.from_number,
             "text": message.text,
             "channel": message.channel,
+            "ctwa_clid": message.ctwa_clid,
+            "referral": message.referral or {},
+            "timestamp": message.timestamp,
         }
         self._redis.rpush(
             f"movia:whatsapp:lead:{message.lead_key}:messages",
@@ -202,6 +209,9 @@ class RedisWhatsAppQueue:
                     from_number=payload["from_number"],
                     text=payload["text"],
                     channel=payload.get("channel") or "whatsapp",
+                    ctwa_clid=payload.get("ctwa_clid"),
+                    referral=payload.get("referral") or {},
+                    timestamp=payload.get("timestamp"),
                 )
             )
         return messages
@@ -240,6 +250,7 @@ class WhatsAppWorkerManager:
         queue: Optional[WhatsAppQueue] = None,
         observability: Optional[PlatformObservabilityService] = None,
         chatwoot_client: Optional[ChatwootClient] = None,
+        meta_conversions: Optional[MetaConversionsService] = None,
     ) -> None:
         self.settings = settings
         self.agent = agent
@@ -252,6 +263,10 @@ class WhatsAppWorkerManager:
         self.observability = observability or PlatformObservabilityService.from_settings(
             settings,
             memory=getattr(agent, "memory", None),
+        )
+        self.meta_conversions = meta_conversions or MetaConversionsService(
+            settings=settings,
+            repository=getattr(agent, "repository", None),
         )
         self._tasks: List[asyncio.Task] = []
         self._stopping = asyncio.Event()
@@ -282,6 +297,9 @@ class WhatsAppWorkerManager:
             message_id=message.message_id,
             from_number=message.from_number,
             text=message.text,
+            ctwa_clid=message.ctwa_clid,
+            referral=message.referral,
+            timestamp=message.timestamp,
         )
         return await self.queue.enqueue(queued)
 
@@ -415,6 +433,7 @@ class WhatsAppWorkerManager:
             )
             self._add_run_event(run_id, "info", "whatsapp_send_started", "Outbound send started.", {})
             send_result = self._send_agent_response(first.from_number, response)
+            self._schedule_meta_conversions(response, batch)
             self._add_run_event(
                 run_id,
                 "info",
@@ -462,6 +481,19 @@ class WhatsAppWorkerManager:
                     payload_json={"error": f"{type(exc).__name__}: {str(exc)[:500]}"},
                 )
             raise
+
+    def _schedule_meta_conversions(self, response: Any, batch: List[QueuedWhatsAppMessage]) -> None:
+        if not self.meta_conversions:
+            return
+        latest = next((message for message in batch if message.ctwa_clid), None)
+        try:
+            self.meta_conversions.schedule_response_events(
+                response=response,
+                latest_ctwa_clid=latest.ctwa_clid if latest else None,
+                latest_referral=latest.referral if latest else {},
+            )
+        except Exception as exc:
+            logger.warning("Meta conversion scheduling failed: %s", exc)
 
     def _send_agent_response(self, to_number: str, response: Any) -> Dict[str, Any]:
         messages = list(response.response_messages or []) or [response.response]

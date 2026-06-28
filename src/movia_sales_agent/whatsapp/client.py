@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 import httpx
 
@@ -13,10 +13,22 @@ logger = logging.getLogger(__name__)
 
 
 class WhatsAppMessage:
-    def __init__(self, message_id: str, from_number: str, text: str):
+    def __init__(
+        self,
+        message_id: str,
+        from_number: str,
+        text: str,
+        *,
+        ctwa_clid: Optional[str] = None,
+        referral: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[str] = None,
+    ):
         self.message_id = message_id
         self.from_number = from_number
         self.text = text
+        self.ctwa_clid = ctwa_clid
+        self.referral = referral or {}
+        self.timestamp = timestamp
 
 
 class WhatsAppClient:
@@ -52,7 +64,7 @@ class WhatsAppClient:
     def _parse_direct_messages(self, body: Dict[str, Any]) -> List[WhatsAppMessage]:
         messages: List[WhatsAppMessage] = []
         for message in body.get("messages", []):
-            parsed = self._parse_text_message(message)
+            parsed = self._parse_text_message(message, fallback_referral=body.get("referral"))
             if parsed:
                 messages.append(parsed)
         return messages
@@ -63,20 +75,34 @@ class WhatsAppClient:
             for change in entry.get("changes", []):
                 value = change.get("value", {})
                 for message in value.get("messages", []):
-                    parsed = self._parse_text_message(message)
+                    parsed = self._parse_text_message(message, fallback_referral=value.get("referral"))
                     if parsed:
                         messages.append(parsed)
         return messages
 
-    def _parse_text_message(self, message: Any) -> WhatsAppMessage | None:
+    def _parse_text_message(
+        self,
+        message: Any,
+        *,
+        fallback_referral: Any = None,
+    ) -> WhatsAppMessage | None:
         if not isinstance(message, dict) or message.get("type") != "text":
             return None
         text_payload = message.get("text") or {}
         text = text_payload.get("body") if isinstance(text_payload, dict) else None
         from_number = message.get("from")
         message_id = message.get("id")
+        referral = compact_referral(message.get("referral") or fallback_referral)
+        ctwa_clid = extract_ctwa_clid(message, referral)
         if text and from_number and message_id:
-            return WhatsAppMessage(str(message_id), str(from_number), str(text))
+            return WhatsAppMessage(
+                str(message_id),
+                str(from_number),
+                str(text),
+                ctwa_clid=ctwa_clid,
+                referral=referral,
+                timestamp=str(message.get("timestamp")) if message.get("timestamp") else None,
+            )
         return None
 
     def send_text(self, to_number: str, text: str) -> Dict[str, Any]:
@@ -167,3 +193,45 @@ class WhatsAppClient:
             response = client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             return response.json()
+
+
+def compact_referral(referral: Any) -> Dict[str, Any]:
+    if not isinstance(referral, dict):
+        return {}
+    allowed = {
+        "source_url",
+        "source_id",
+        "source_type",
+        "headline",
+        "body",
+        "media_type",
+        "image_url",
+        "video_url",
+        "thumbnail_url",
+        "ctwa_clid",
+        "ad_id",
+        "adset_id",
+        "campaign_id",
+    }
+    compact: Dict[str, Any] = {}
+    for key in allowed:
+        value = referral.get(key)
+        if value is not None:
+            compact[key] = value
+    return compact
+
+
+def extract_ctwa_clid(message: Dict[str, Any], referral: Dict[str, Any]) -> Optional[str]:
+    candidates = [
+        referral.get("ctwa_clid"),
+        message.get("ctwa_clid"),
+        (
+            message.get("referral", {}).get("ctwa_clid")
+            if isinstance(message.get("referral"), dict)
+            else None
+        ),
+    ]
+    for value in candidates:
+        if value:
+            return str(value)
+    return None

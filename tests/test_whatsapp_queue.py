@@ -198,6 +198,37 @@ async def test_worker_does_not_whatsapp_fallback_after_partial_chatwoot_send():
     assert chatwoot.private_notes == []
 
 
+@pytest.mark.asyncio
+async def test_worker_schedules_meta_conversions_with_batch_ctwa_metadata():
+    agent = FakeAgent()
+    client = FakeClient()
+    meta = FakeMetaConversions()
+    manager = WhatsAppWorkerManager(
+        settings=queue_settings(MOVIA_LEAD_BATCH_WINDOW_SECONDS=0),
+        agent=agent,
+        client=client,
+        queue=InMemoryWhatsAppQueue(),
+        meta_conversions=meta,
+    )
+    await manager.start()
+    try:
+        await manager.enqueue(
+            WhatsAppMessage(
+                "m1",
+                "lead-a",
+                "Hola",
+                ctwa_clid="ctwa-123",
+                referral={"campaign_id": "camp-1"},
+            )
+        )
+        await wait_for(lambda: len(meta.scheduled) == 1)
+    finally:
+        await manager.stop()
+
+    assert meta.scheduled[0]["latest_ctwa_clid"] == "ctwa-123"
+    assert meta.scheduled[0]["latest_referral"] == {"campaign_id": "camp-1"}
+
+
 def test_build_queue_falls_back_when_redis_is_unreachable():
     settings = queue_settings(REDIS_URL="redis://unreachable-redis-host:6379/0")
 
@@ -270,3 +301,17 @@ class FakeChatwootClient:
             {"conversation_id": conversation.conversation_id, "content": content}
         )
         return {"transport": "chatwoot_private_note"}
+
+
+class FakeMetaConversions:
+    def __init__(self):
+        self.scheduled = []
+
+    def schedule_response_events(self, *, response, latest_ctwa_clid=None, latest_referral=None):
+        self.scheduled.append(
+            {
+                "response": response,
+                "latest_ctwa_clid": latest_ctwa_clid,
+                "latest_referral": latest_referral,
+            }
+        )

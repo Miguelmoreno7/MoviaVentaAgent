@@ -39,6 +39,7 @@ eval = [
 movia-api = "movia_sales_agent.api.main:run"
 movia-eval = "movia_sales_agent.evaluation.cli:main"
 movia-platform-sync = "movia_sales_agent.platform.cli:main"
+movia-meta-capi = "movia_sales_agent.meta.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -4,7 +4,6 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from functools import lru_cache
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 import uvicorn
@@ -15,6 +14,7 @@ from movia_sales_agent.agent.graph import MoviaSalesAgent
 from movia_sales_agent.chatwoot.client import ChatwootClient, ChatwootSendError
 from movia_sales_agent.config.paths import PROJECT_ROOT
 from movia_sales_agent.config.settings import Settings, get_settings
+from movia_sales_agent.meta.conversions import MetaConversionsService
 from movia_sales_agent.models.schemas import ChatRequest, ChatResponse
 from movia_sales_agent.platform.registry_sync import sync_from_settings
 from movia_sales_agent.runtime.metadata import (
@@ -154,6 +154,10 @@ def health(
         "debug_ui_enabled": settings.enable_debug_ui,
         "debug_metadata_enabled": settings.debug_metadata,
         "whatsapp_enabled": settings.whatsapp_enabled,
+        "meta_whatsapp_business_account_configured": bool(
+            settings.meta_whatsapp_business_account_id
+        ),
+        "meta_capi_dataset_configured": bool(settings.meta_capi_dataset_id),
     }
 
 
@@ -270,6 +274,7 @@ async def run_agent_and_send(
                         conversation,
                         list(response.response_messages or []) or [response.response],
                     )
+                    schedule_meta_conversions(settings, agent, inbound, response)
                     return response
             except ChatwootSendError as exc:
                 if exc.sent_count > 0:
@@ -279,6 +284,7 @@ async def run_agent_and_send(
                         exc.sent_count,
                         exc.original,
                     )
+                    schedule_meta_conversions(settings, agent, inbound, response)
                     return response
                 logger.warning(
                     "Chatwoot outbound failed before accepting a message in direct webhook path: %s",
@@ -299,9 +305,29 @@ async def run_agent_and_send(
                 )
             except Exception as exc:
                 logger.warning("Chatwoot fallback private note failed in direct webhook path: %s", exc)
+        schedule_meta_conversions(settings, agent, inbound, response)
         return response
 
     return await asyncio.to_thread(_run)
+
+
+def schedule_meta_conversions(
+    settings: Settings,
+    agent: MoviaSalesAgent,
+    inbound: Any,
+    response: ChatResponse,
+) -> None:
+    try:
+        MetaConversionsService(
+            settings=settings,
+            repository=getattr(agent, "repository", None),
+        ).schedule_response_events(
+            response=response,
+            latest_ctwa_clid=getattr(inbound, "ctwa_clid", None),
+            latest_referral=getattr(inbound, "referral", {}) or {},
+        )
+    except Exception as exc:
+        logger.warning("Meta conversion scheduling failed in direct webhook path: %s", exc)
 
 
 def compact_chat_response(response: ChatResponse) -> ChatResponse:

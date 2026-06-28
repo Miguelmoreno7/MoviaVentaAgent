@@ -17,6 +17,7 @@ class MoviaRepository:
         self.settings = settings
         self._offline_leads: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self._offline_leads_by_id: Dict[str, Dict[str, Any]] = {}
+        self._offline_meta_events: set[Tuple[str, str]] = set()
 
     @property
     def enabled(self) -> bool:
@@ -123,6 +124,9 @@ class MoviaRepository:
                     "active_objection": {},
                     "last_action": None,
                     "chatwoot_conversation_id": None,
+                    "meta_ctwa_clid": None,
+                    "meta_ctwa_clid_received_at": None,
+                    "meta_referral": {},
                     "profile_data": {},
                 }
                 self._offline_leads_by_id[lead_id] = self._offline_leads[key]
@@ -301,6 +305,133 @@ class MoviaRepository:
                 where id = %s
                 """,
                 (int(conversation_id), lead_id),
+            )
+
+    def store_meta_ctwa_attribution(
+        self,
+        lead_id: Optional[str],
+        ctwa_clid: Optional[str],
+        referral: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        if not lead_id or not ctwa_clid:
+            return False
+        if not self.enabled:
+            lead = self._offline_leads_by_id.get(lead_id)
+            if lead is None:
+                return False
+            if lead.get("meta_ctwa_clid"):
+                return False
+            lead["meta_ctwa_clid"] = str(ctwa_clid)
+            lead["meta_ctwa_clid_received_at"] = utc_now_iso()
+            lead["meta_referral"] = dict(referral or {})
+            return True
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                update public.movia_lead_profiles
+                set meta_ctwa_clid = %s,
+                    meta_ctwa_clid_received_at = coalesce(meta_ctwa_clid_received_at, now()),
+                    meta_referral = case
+                      when coalesce(meta_referral, '{}'::jsonb) = '{}'::jsonb
+                        then %s::jsonb
+                      else meta_referral
+                    end
+                where id = %s
+                  and meta_ctwa_clid is null
+                returning id
+                """,
+                (str(ctwa_clid), json.dumps(referral or {}), lead_id),
+            ).fetchone()
+        return bool(row)
+
+    def get_meta_ctwa_attribution(self, lead_id: Optional[str]) -> Dict[str, Any]:
+        if not lead_id:
+            return {}
+        if not self.enabled:
+            lead = self._offline_leads_by_id.get(lead_id) or {}
+            return {
+                "ctwa_clid": lead.get("meta_ctwa_clid"),
+                "referral": lead.get("meta_referral") or {},
+            }
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                select meta_ctwa_clid as ctwa_clid, meta_referral as referral
+                from public.movia_lead_profiles
+                where id = %s
+                """,
+                (lead_id,),
+            ).fetchone()
+        return dict(row or {})
+
+    def create_meta_conversion_event(
+        self,
+        *,
+        lead_id: Optional[str],
+        event_name: str,
+        event_id: str,
+        payload: Dict[str, Any],
+    ) -> bool:
+        if not lead_id:
+            return False
+        if not self.enabled:
+            key = (lead_id, event_name)
+            if key in self._offline_meta_events:
+                return False
+            self._offline_meta_events.add(key)
+            return True
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                insert into public.movia_meta_conversion_events (
+                  lead_id, event_name, event_id, status, payload
+                )
+                values (%s, %s, %s, 'pending', %s::jsonb)
+                on conflict (lead_id, event_name) do nothing
+                returning id
+                """,
+                (lead_id, event_name, event_id, json.dumps(payload)),
+            ).fetchone()
+        return bool(row)
+
+    def mark_meta_conversion_event_sent(
+        self,
+        *,
+        event_id: str,
+        response_json: Dict[str, Any],
+    ) -> None:
+        if not self.enabled:
+            return
+        with self.connect() as conn:
+            conn.execute(
+                """
+                update public.movia_meta_conversion_events
+                set status = 'sent',
+                    response_json = %s::jsonb,
+                    sent_at = now(),
+                    last_attempted_at = now(),
+                    attempt_count = attempt_count + 1,
+                    updated_at = now()
+                where event_id = %s
+                """,
+                (json.dumps(response_json), event_id),
+            )
+
+    def mark_meta_conversion_event_failed(self, *, event_id: str, error_text: str) -> None:
+        if not self.enabled:
+            return
+        with self.connect() as conn:
+            conn.execute(
+                """
+                update public.movia_meta_conversion_events
+                set status = 'failed',
+                    error_text = %s,
+                    last_attempted_at = now(),
+                    attempt_count = attempt_count + 1,
+                    updated_at = now()
+                where event_id = %s
+                """,
+                (error_text[:1000], event_id),
             )
 
     def load_recent_messages(self, lead_id: Optional[str], limit: int = 8) -> List[Dict[str, Any]]:

@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     meta_whatsapp_phone_number_id: Optional[str] = Field(
         default=None, alias="META_WHATSAPP_PHONE_NUMBER_ID"
     )
+    meta_whatsapp_business_account_id: Optional[str] = Field(
+        default=None, alias="META_WHATSAPP_BUSINESS_ACCOUNT_ID"
+    )
+    meta_capi_dataset_id: Optional[str] = Field(default=None, alias="META_CAPI_DATASET_ID")
     chatwoot_url: Optional[str] = Field(default=None, alias="CHATWOOT_URL")
     chatwoot_api_token: Optional[str] = Field(default=None, alias="CHATWOOT_API_TOKEN")
     chatwoot_account_id: Optional[int] = Field(default=None, alias="CHATWOOT_ACCOUNT_ID")
@@ -86,6 +90,14 @@ class Settings(BaseSettings):
     @property
     def whatsapp_enabled(self) -> bool:
         return bool(self.meta_whatsapp_access_token and self.meta_whatsapp_phone_number_id)
+
+    @property
+    def meta_capi_configured(self) -> bool:
+        return bool(
+            self.meta_whatsapp_access_token
+            and self.meta_whatsapp_business_account_id
+            and self.meta_capi_dataset_id
+        )
 
     @property
     def chatwoot_enabled(self) -> bool:
