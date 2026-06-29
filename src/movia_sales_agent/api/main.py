@@ -14,8 +14,10 @@ from movia_sales_agent.agent.graph import MoviaSalesAgent
 from movia_sales_agent.chatwoot.client import ChatwootClient, ChatwootSendError
 from movia_sales_agent.config.paths import PROJECT_ROOT
 from movia_sales_agent.config.settings import Settings, get_settings
+from movia_sales_agent.followup.scheduler import FollowUpScheduler
 from movia_sales_agent.meta.conversions import MetaConversionsService
 from movia_sales_agent.models.schemas import ChatRequest, ChatResponse
+from movia_sales_agent.platform.observability import PlatformObservabilityService
 from movia_sales_agent.platform.registry_sync import sync_from_settings
 from movia_sales_agent.runtime.metadata import (
     compact_knowledge_plan,
@@ -35,18 +37,35 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings = get_settings()
     app.state.platform_registry_sync = await sync_platform_registry_on_startup(settings)
+    agent = get_agent()
     manager: Optional[WhatsAppWorkerManager] = None
     if settings.webhook_queue_enabled:
         manager = WhatsAppWorkerManager(
             settings=settings,
-            agent=get_agent(),
+            agent=agent,
             client=WhatsAppClient(settings),
         )
         await manager.start()
+    scheduler: Optional[FollowUpScheduler] = None
+    if settings.followup_enabled:
+        scheduler = FollowUpScheduler(
+            settings=settings,
+            repository=agent.repository,
+            whatsapp_client=WhatsAppClient(settings),
+            chatwoot_client=ChatwootClient(settings, repository=agent.repository),
+            observability=PlatformObservabilityService.from_settings(
+                settings,
+                memory=getattr(agent, "memory", None),
+            ),
+        )
+        await scheduler.start()
     app.state.whatsapp_worker_manager = manager
+    app.state.followup_scheduler = scheduler
     try:
         yield
     finally:
+        if scheduler:
+            await scheduler.stop()
         if manager:
             await manager.stop()
 
@@ -106,6 +125,10 @@ def get_worker_manager(request: Request) -> Optional[WhatsAppWorkerManager]:
     return getattr(request.app.state, "whatsapp_worker_manager", None)
 
 
+def get_followup_scheduler(request: Request) -> Optional[FollowUpScheduler]:
+    return getattr(request.app.state, "followup_scheduler", None)
+
+
 @app.get("/")
 def frontend(
     _debug: None = Depends(require_debug_ui),
@@ -132,6 +155,7 @@ def frontend_asset(
 def health(
     settings: Settings = Depends(get_settings),
     manager: Optional[WhatsAppWorkerManager] = Depends(get_worker_manager),
+    scheduler: Optional[FollowUpScheduler] = Depends(get_followup_scheduler),
 ) -> Dict[str, Any]:
     return {
         "status": "ok",
@@ -142,6 +166,10 @@ def health(
         "queue_durable": bool(manager and manager.durable),
         "job_concurrency": settings.job_concurrency,
         "lead_batch_window_seconds": settings.lead_batch_window_seconds,
+        "followup_enabled": settings.followup_enabled,
+        "followup_scheduler_running": bool(scheduler and scheduler.running),
+        "followup_delay_hours": settings.followup_delay_hours,
+        "followup_scan_interval_seconds": settings.followup_scan_interval_seconds,
         "platform_observability_enabled": settings.platform_observability_enabled,
         "platform_registry_sync_on_startup": settings.platform_registry_sync_on_startup,
         "platform_registry_sync_status": getattr(

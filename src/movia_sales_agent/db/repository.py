@@ -498,6 +498,265 @@ class MoviaRepository:
             ).fetchone()
         return bool(row)
 
+    def find_followup_candidates(
+        self,
+        *,
+        delay_hours: float,
+        window_safety_minutes: float,
+        max_attempts: int,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        if not self.enabled:
+            return []
+        delay_seconds = max(0, int(delay_hours * 3600))
+        window_seconds = max(0, int((24 * 60 * 60) - (window_safety_minutes * 60)))
+        stale_claim_seconds = 20 * 60
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                with latest_message as (
+                  select distinct on (lead_id)
+                    id, lead_id, role, created_at
+                  from public.movia_conversation_messages
+                  order by lead_id, created_at desc, id desc
+                ),
+                latest_user as (
+                  select distinct on (lead_id)
+                    id, lead_id, content, created_at
+                  from public.movia_conversation_messages
+                  where role = 'user'
+                  order by lead_id, created_at desc, id desc
+                ),
+                latest_assistant as (
+                  select distinct on (lead_id)
+                    id, lead_id, content, retrieval_metadata, created_at
+                  from public.movia_conversation_messages
+                  where role = 'assistant'
+                  order by lead_id, created_at desc, id desc
+                )
+                select
+                  l.id as lead_id,
+                  l.external_user_id,
+                  l.channel,
+                  l.current_stage,
+                  l.last_action,
+                  l.profile_data,
+                  lu.id as trigger_user_message_id,
+                  lu.content as trigger_user_content,
+                  lu.created_at as trigger_user_created_at,
+                  la.id as latest_assistant_message_id,
+                  la.content as latest_assistant_content,
+                  la.retrieval_metadata as latest_assistant_retrieval_metadata,
+                  la.created_at as latest_assistant_created_at,
+                  f.id as existing_attempt_id,
+                  f.status as existing_attempt_status,
+                  f.attempt_count as existing_attempt_count
+                from public.movia_lead_profiles l
+                join latest_message lm on lm.lead_id = l.id
+                join latest_user lu on lu.lead_id = l.id
+                join latest_assistant la on la.lead_id = l.id
+                left join public.movia_followup_attempts f
+                  on f.lead_id = l.id
+                 and f.trigger_user_message_id = lu.id
+                 and f.followup_type = 'standard'
+                where l.channel = 'whatsapp'
+                  and l.current_stage not in ('post_purchase', 'handoff')
+                  and lm.role = 'assistant'
+                  and la.created_at <= now() - (%s::double precision * interval '1 second')
+                  and lu.created_at >= now() - (%s::double precision * interval '1 second')
+                  and (
+                    f.id is null
+                    or (
+                      f.status = 'failed'
+                      and f.attempt_count < %s
+                    )
+                    or (
+                      f.status = 'claimed'
+                      and f.claimed_at < now() - (%s::double precision * interval '1 second')
+                      and f.attempt_count < %s
+                    )
+                  )
+                order by la.created_at asc
+                limit %s
+                """,
+                (
+                    delay_seconds,
+                    window_seconds,
+                    max_attempts,
+                    stale_claim_seconds,
+                    max_attempts,
+                    limit,
+                ),
+            ).fetchall()
+        return rows
+
+    def claim_followup_attempt(
+        self,
+        *,
+        lead_id: str,
+        trigger_user_message_id: str,
+        message_text: str,
+        max_attempts: int,
+        followup_type: str = "standard",
+    ) -> Optional[Dict[str, Any]]:
+        if not self.enabled:
+            return None
+        stale_claim_seconds = 20 * 60
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                insert into public.movia_followup_attempts (
+                  lead_id, trigger_user_message_id, followup_type, status,
+                  message_text, claimed_at
+                )
+                values (%s, %s, %s, 'claimed', %s, now())
+                on conflict (lead_id, trigger_user_message_id, followup_type)
+                do update set
+                  status = 'claimed',
+                  message_text = excluded.message_text,
+                  error_text = null,
+                  claimed_at = now(),
+                  updated_at = now()
+                where (
+                  public.movia_followup_attempts.status = 'failed'
+                  and public.movia_followup_attempts.attempt_count < %s
+                )
+                or (
+                  public.movia_followup_attempts.status = 'claimed'
+                  and public.movia_followup_attempts.claimed_at
+                    < now() - (%s::double precision * interval '1 second')
+                  and public.movia_followup_attempts.attempt_count < %s
+                )
+                returning *
+                """,
+                (
+                    lead_id,
+                    trigger_user_message_id,
+                    followup_type,
+                    message_text,
+                    max_attempts,
+                    stale_claim_seconds,
+                    max_attempts,
+                ),
+            ).fetchone()
+        return row
+
+    def is_followup_still_valid(
+        self,
+        *,
+        lead_id: str,
+        trigger_user_message_id: str,
+        delay_hours: float,
+        window_safety_minutes: float,
+    ) -> bool:
+        if not self.enabled:
+            return False
+        delay_seconds = max(0, int(delay_hours * 3600))
+        window_seconds = max(0, int((24 * 60 * 60) - (window_safety_minutes * 60)))
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                with latest_message as (
+                  select distinct on (lead_id)
+                    id, lead_id, role, created_at
+                  from public.movia_conversation_messages
+                  where lead_id = %s
+                  order by lead_id, created_at desc, id desc
+                ),
+                latest_user as (
+                  select distinct on (lead_id)
+                    id, lead_id, created_at
+                  from public.movia_conversation_messages
+                  where lead_id = %s and role = 'user'
+                  order by lead_id, created_at desc, id desc
+                ),
+                latest_assistant as (
+                  select distinct on (lead_id)
+                    id, lead_id, created_at
+                  from public.movia_conversation_messages
+                  where lead_id = %s and role = 'assistant'
+                  order by lead_id, created_at desc, id desc
+                )
+                select 1
+                from public.movia_lead_profiles l
+                join latest_message lm on lm.lead_id = l.id
+                join latest_user lu on lu.lead_id = l.id
+                join latest_assistant la on la.lead_id = l.id
+                where l.id = %s
+                  and l.channel = 'whatsapp'
+                  and l.current_stage not in ('post_purchase', 'handoff')
+                  and lm.role = 'assistant'
+                  and lu.id = %s
+                  and la.created_at <= now() - (%s::double precision * interval '1 second')
+                  and lu.created_at >= now() - (%s::double precision * interval '1 second')
+                limit 1
+                """,
+                (
+                    lead_id,
+                    lead_id,
+                    lead_id,
+                    lead_id,
+                    trigger_user_message_id,
+                    delay_seconds,
+                    window_seconds,
+                ),
+            ).fetchone()
+        return bool(row)
+
+    def mark_followup_sent(
+        self,
+        *,
+        attempt_id: str,
+        send_result: Dict[str, Any],
+    ) -> None:
+        if not self.enabled:
+            return
+        with self.connect() as conn:
+            conn.execute(
+                """
+                update public.movia_followup_attempts
+                set status = 'sent',
+                    send_result = %s::jsonb,
+                    sent_at = now(),
+                    attempt_count = attempt_count + 1,
+                    updated_at = now()
+                where id = %s
+                """,
+                (json.dumps(send_result), attempt_id),
+            )
+
+    def mark_followup_failed(self, *, attempt_id: str, error_text: str) -> None:
+        if not self.enabled:
+            return
+        with self.connect() as conn:
+            conn.execute(
+                """
+                update public.movia_followup_attempts
+                set status = 'failed',
+                    error_text = %s,
+                    attempt_count = attempt_count + 1,
+                    updated_at = now()
+                where id = %s
+                """,
+                (error_text[:1000], attempt_id),
+            )
+
+    def mark_followup_skipped(self, *, attempt_id: str, reason: str) -> None:
+        if not self.enabled:
+            return
+        with self.connect() as conn:
+            conn.execute(
+                """
+                update public.movia_followup_attempts
+                set status = 'skipped',
+                    error_text = %s,
+                    skipped_at = now(),
+                    updated_at = now()
+                where id = %s
+                """,
+                (reason[:1000], attempt_id),
+            )
+
     def match_knowledge(
         self, embedding: Iterable[float], match_count: int = 5, metadata_filter: Optional[Dict] = None
     ) -> List[Dict[str, Any]]:
