@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from functools import lru_cache
@@ -30,7 +31,24 @@ from movia_sales_agent.whatsapp.queue import WhatsAppWorkerManager
 
 
 FRONTEND_ROOT = PROJECT_ROOT / "frontend"
+WEBHOOK_LOG_MAX_CHARS = 20000
 logger = logging.getLogger(__name__)
+
+
+class HealthAccessLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return '"GET /health ' not in message and '"HEAD /health ' not in message
+
+
+def install_health_access_log_filter() -> None:
+    access_logger = logging.getLogger("uvicorn.access")
+    if any(isinstance(item, HealthAccessLogFilter) for item in access_logger.filters):
+        return
+    access_logger.addFilter(HealthAccessLogFilter())
+
+
+install_health_access_log_filter()
 
 
 @asynccontextmanager
@@ -215,7 +233,14 @@ async def receive_whatsapp(
 ) -> Dict[str, Any]:
     payload = await request.json()
     inbound_messages = client.parse_messages(payload)
-    logger.info("whatsapp_webhook_received parsed_messages=%s", len(inbound_messages))
+    summaries = summarize_webhook_messages(payload)
+    logger.info("whatsapp_webhook_payload raw=%s", json_for_log(payload))
+    logger.info(
+        "whatsapp_webhook_received parsed_messages=%s raw_messages=%s summaries=%s",
+        len(inbound_messages),
+        len(summaries),
+        json_for_log(summaries),
+    )
     results = []
     if settings.webhook_queue_enabled:
         if manager is None:
@@ -356,6 +381,89 @@ def schedule_meta_conversions(
         )
     except Exception as exc:
         logger.warning("Meta conversion scheduling failed in direct webhook path: %s", exc)
+
+
+def json_for_log(payload: Any, *, max_chars: int = WEBHOOK_LOG_MAX_CHARS) -> str:
+    try:
+        text = json.dumps(payload, ensure_ascii=False, default=str, sort_keys=True)
+    except Exception:
+        text = str(payload)
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + f"...[truncated {len(text) - max_chars} chars]"
+
+
+def summarize_webhook_messages(payload: Any) -> list[Dict[str, Any]]:
+    summaries = []
+    for body_index, body in enumerate(candidate_webhook_bodies(payload)):
+        source = f"body[{body_index}]"
+        summaries.extend(
+            summarize_message(message, source=f"{source}.messages")
+            for message in body.get("messages", [])
+            if isinstance(message, dict)
+        )
+        for entry_index, entry in enumerate(body.get("entry", [])):
+            if not isinstance(entry, dict):
+                continue
+            for change_index, change in enumerate(entry.get("changes", [])):
+                if not isinstance(change, dict):
+                    continue
+                value = change.get("value") if isinstance(change.get("value"), dict) else {}
+                messages = value.get("messages", []) if isinstance(value, dict) else []
+                summaries.extend(
+                    summarize_message(
+                        message,
+                        source=f"{source}.entry[{entry_index}].changes[{change_index}].value.messages",
+                    )
+                    for message in messages
+                    if isinstance(message, dict)
+                )
+    return summaries
+
+
+def candidate_webhook_bodies(payload: Any) -> list[Dict[str, Any]]:
+    bodies: list[Dict[str, Any]] = []
+    if isinstance(payload, list):
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            body = item.get("body")
+            if isinstance(body, dict):
+                bodies.append(body)
+            bodies.append(item)
+        return bodies
+    if isinstance(payload, dict):
+        body = payload.get("body")
+        if isinstance(body, dict):
+            bodies.append(body)
+        bodies.append(payload)
+    return bodies
+
+
+def summarize_message(message: Dict[str, Any], *, source: str) -> Dict[str, Any]:
+    text_payload = message.get("text") if isinstance(message.get("text"), dict) else {}
+    referral = message.get("referral") if isinstance(message.get("referral"), dict) else {}
+    summary: Dict[str, Any] = {
+        "source": source,
+        "id": message.get("id"),
+        "from": message.get("from"),
+        "type": message.get("type"),
+        "timestamp": message.get("timestamp"),
+    }
+    if text_payload:
+        summary["text_body"] = text_payload.get("body")
+    if referral:
+        summary["referral_keys"] = sorted(referral.keys())
+        if referral.get("ctwa_clid"):
+            summary["ctwa_clid"] = referral.get("ctwa_clid")
+    if isinstance(message.get("button"), dict):
+        summary["button"] = message.get("button")
+    if isinstance(message.get("interactive"), dict):
+        interactive = message["interactive"]
+        summary["interactive_type"] = interactive.get("type")
+    if message.get("type") != "text":
+        summary["parsed_by_agent"] = False
+    return summary
 
 
 def compact_chat_response(response: ChatResponse) -> ChatResponse:

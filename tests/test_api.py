@@ -1,12 +1,16 @@
+import logging
+
 from fastapi.testclient import TestClient
 import pytest
 
 from movia_sales_agent.agent.graph import MoviaSalesAgent
 from movia_sales_agent.api.main import (
+    HealthAccessLogFilter,
     app,
     get_agent,
     get_settings,
     get_whatsapp_client,
+    summarize_webhook_messages,
     sync_platform_registry_on_startup,
 )
 from movia_sales_agent.config.settings import Settings
@@ -43,6 +47,18 @@ def make_test_settings() -> Settings:
     )
 
 
+def logging_record(message: str) -> logging.LogRecord:
+    return logging.LogRecord(
+        name="uvicorn.access",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg=message,
+        args=(),
+        exc_info=None,
+    )
+
+
 def test_health_and_chat_endpoint():
     settings = make_test_settings()
     app.dependency_overrides[get_settings] = lambda: settings
@@ -74,6 +90,49 @@ def test_health_and_chat_endpoint():
     assert body["lead_state"]["last_action"] == "answer_unknown_safely"
     assert "total" in body["token_usage"]
     app.dependency_overrides.clear()
+
+
+def test_health_access_log_filter_suppresses_health_checks():
+    filter_ = HealthAccessLogFilter()
+    health_record = logging_record('10.0.0.1:123 - "GET /health HTTP/1.1" 200')
+    webhook_record = logging_record('10.0.0.1:124 - "POST /webhooks/whatsapp HTTP/1.1" 200')
+
+    assert filter_.filter(health_record) is False
+    assert filter_.filter(webhook_record) is True
+
+
+def test_webhook_summary_includes_unsupported_message_types():
+    summaries = summarize_webhook_messages(
+        [
+            {
+                "body": {
+                    "messages": [
+                        {
+                            "from": "5218717876121",
+                            "id": "wamid.start",
+                            "timestamp": "1782071897",
+                            "type": "button",
+                            "button": {"text": "Empezar"},
+                            "referral": {"ctwa_clid": "clid-1", "campaign_id": "campaign-1"},
+                        },
+                        {
+                            "from": "5218717876121",
+                            "id": "wamid.text",
+                            "timestamp": "1782071898",
+                            "text": {"body": "Hola"},
+                            "type": "text",
+                        },
+                    ]
+                }
+            }
+        ]
+    )
+
+    assert len(summaries) == 2
+    assert summaries[0]["type"] == "button"
+    assert summaries[0]["parsed_by_agent"] is False
+    assert summaries[0]["ctwa_clid"] == "clid-1"
+    assert summaries[1]["text_body"] == "Hola"
 
 
 def test_chat_endpoint_requires_internal_api_key():

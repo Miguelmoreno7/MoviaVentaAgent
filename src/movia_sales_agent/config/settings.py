@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     debug_metadata: bool = Field(default=False, alias="MOVIA_DEBUG_METADATA")
     webhook_queue_enabled: bool = Field(default=True, alias="MOVIA_WEBHOOK_QUEUE_ENABLED")
     job_concurrency: int = Field(default=4, alias="MOVIA_JOB_CONCURRENCY")
-    lead_batch_window_seconds: float = Field(default=15.0, alias="MOVIA_LEAD_BATCH_WINDOW_SECONDS")
+    lead_batch_window_seconds: float = Field(default=20.0, alias="MOVIA_LEAD_BATCH_WINDOW_SECONDS")
     followup_enabled: bool = Field(default=True, alias="MOVIA_FOLLOWUP_ENABLED")
     followup_delay_hours: float = Field(default=4.0, alias="MOVIA_FOLLOWUP_DELAY_HOURS")
     followup_scan_interval_seconds: float = Field(
