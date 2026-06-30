@@ -234,6 +234,7 @@ async def receive_whatsapp(
     payload = await request.json()
     inbound_messages = client.parse_messages(payload)
     summaries = summarize_webhook_messages(payload)
+    print_webhook_diagnostics(payload, summaries=summaries, parsed_count=len(inbound_messages))
     logger.info("whatsapp_webhook_payload raw=%s", json_for_log(payload))
     logger.info(
         "whatsapp_webhook_received parsed_messages=%s raw_messages=%s summaries=%s",
@@ -391,6 +392,22 @@ def json_for_log(payload: Any, *, max_chars: int = WEBHOOK_LOG_MAX_CHARS) -> str
     if len(text) <= max_chars:
         return text
     return text[:max_chars] + f"...[truncated {len(text) - max_chars} chars]"
+
+
+def print_webhook_diagnostics(
+    payload: Any,
+    *,
+    summaries: list[Dict[str, Any]],
+    parsed_count: int,
+) -> None:
+    print(f"whatsapp_webhook_payload raw={json_for_log(payload)}", flush=True)
+    print(
+        "whatsapp_webhook_received "
+        f"parsed_messages={parsed_count} "
+        f"raw_messages={len(summaries)} "
+        f"summaries={json_for_log(summaries)}",
+        flush=True,
+    )
 
 
 def summarize_webhook_messages(payload: Any) -> list[Dict[str, Any]]:

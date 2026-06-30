@@ -10,6 +10,7 @@ from movia_sales_agent.api.main import (
     get_agent,
     get_settings,
     get_whatsapp_client,
+    print_webhook_diagnostics,
     summarize_webhook_messages,
     sync_platform_registry_on_startup,
 )
@@ -133,6 +134,24 @@ def test_webhook_summary_includes_unsupported_message_types():
     assert summaries[0]["parsed_by_agent"] is False
     assert summaries[0]["ctwa_clid"] == "clid-1"
     assert summaries[1]["text_body"] == "Hola"
+
+
+def test_print_webhook_diagnostics_emits_to_stdout(monkeypatch):
+    lines = []
+    payload = {"messages": [{"id": "wamid.1", "from": "521", "type": "text", "text": {"body": "Hola"}}]}
+    summaries = summarize_webhook_messages(payload)
+
+    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: lines.append({"args": args, "kwargs": kwargs}))
+
+    print_webhook_diagnostics(payload, summaries=summaries, parsed_count=1)
+
+    assert len(lines) == 2
+    assert lines[0]["args"][0].startswith("whatsapp_webhook_payload raw=")
+    assert "Hola" in lines[0]["args"][0]
+    assert "parsed_messages=1" in lines[1]["args"][0]
+    assert "raw_messages=1" in lines[1]["args"][0]
+    assert lines[0]["kwargs"]["flush"] is True
+    assert lines[1]["kwargs"]["flush"] is True
 
 
 def test_chat_endpoint_requires_internal_api_key():
