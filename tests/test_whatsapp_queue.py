@@ -268,7 +268,13 @@ async def test_worker_sends_entry_intent_as_whatsapp_interactive_buttons():
 
 @pytest.mark.asyncio
 async def test_worker_sends_ctwa_first_touch_as_whatsapp_interactive_buttons():
-    agent = FakeAgent(selected_action={"next_question_key": "business_type"})
+    agent = FakeAgent(
+        selected_action={
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_general_then_discover_need",
+            "next_question_key": "business_type",
+        }
+    )
     client = FakeClient()
     chatwoot = FakeChatwootClient()
     manager = WhatsAppWorkerManager(
@@ -296,6 +302,44 @@ async def test_worker_sends_ctwa_first_touch_as_whatsapp_interactive_buttons():
     assert client.interactive_buttons == [{"to": "lead-a"}]
     assert client.sent == []
     assert chatwoot.public_messages == []
+
+
+@pytest.mark.asyncio
+async def test_worker_does_not_force_ctwa_buttons_for_specific_pricing_turn():
+    agent = FakeAgent(
+        selected_action={
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "next_question_key": "business_type",
+        }
+    )
+    client = FakeClient()
+    chatwoot = FakeChatwootClient()
+    manager = WhatsAppWorkerManager(
+        settings=queue_settings(MOVIA_LEAD_BATCH_WINDOW_SECONDS=0),
+        agent=agent,
+        client=client,
+        queue=InMemoryWhatsAppQueue(),
+        chatwoot_client=chatwoot,
+    )
+    await manager.start()
+    try:
+        await manager.enqueue(
+            WhatsAppMessage(
+                "m1",
+                "lead-a",
+                "Hola, quiero más información",
+                ctwa_clid="ctwa-123",
+                referral={"campaign_id": "camp-1"},
+            )
+        )
+        await manager.enqueue(WhatsAppMessage("m2", "lead-a", "¿Cuánto cuesta?"))
+        await wait_for(lambda: len(chatwoot.public_messages) == 1)
+    finally:
+        await manager.stop()
+
+    assert client.interactive_buttons == []
+    assert chatwoot.public_messages[0]["messages"] == ["respuesta para lead-a"]
 
 
 @pytest.mark.asyncio

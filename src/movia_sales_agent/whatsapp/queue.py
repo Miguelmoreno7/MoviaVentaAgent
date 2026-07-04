@@ -549,7 +549,10 @@ class WhatsAppWorkerManager:
             send_result = self._send_agent_response(
                 first.from_number,
                 response,
-                force_entry_intent_buttons=any(message.ctwa_clid for message in batch),
+                force_entry_intent_buttons=should_send_campaign_entry_intent_buttons(
+                    response,
+                    batch,
+                ),
             )
             self._schedule_meta_conversions(response, batch)
             self._add_run_event(
@@ -813,3 +816,50 @@ def split_batch_by_window(
 def should_send_entry_intent_buttons(response: Any) -> bool:
     selected_action = getattr(response, "selected_action", None) or {}
     return selected_action.get("next_question_key") == "entry_intent"
+
+
+def should_send_campaign_entry_intent_buttons(
+    response: Any,
+    batch: List[QueuedWhatsAppMessage],
+) -> bool:
+    if not any(message.ctwa_clid for message in batch):
+        return False
+    if should_send_entry_intent_buttons(response):
+        return True
+
+    selected_action = getattr(response, "selected_action", None) or {}
+    macro_action = str(selected_action.get("macro_action") or getattr(response, "action", "") or "")
+    micro_action = str(selected_action.get("micro_action") or "")
+    next_question_key = selected_action.get("next_question_key")
+
+    if macro_action == "answer_unknown_safely":
+        return True
+    if macro_action != "answer_and_advance":
+        return False
+    if next_question_key == "entry_intent":
+        return True
+
+    specific_answer_micro_actions = {
+        "answer_price_then_explain_scope",
+        "answer_scope_then_discover_business",
+        "answer_channel_then_discover_main_channel",
+        "answer_process_then_explain_next_step",
+        "answer_policy_then_reduce_risk",
+    }
+    if micro_action in specific_answer_micro_actions:
+        return False
+
+    commercial_specific_keys = {
+        "objection_clarification",
+        "answer_or_actions",
+        "guide_app_options",
+    }
+    if next_question_key in commercial_specific_keys:
+        return False
+
+    return micro_action in {"", "answer_general_then_discover_need"} or next_question_key in {
+        None,
+        "business_type",
+        "automation_need",
+        "action_requirement",
+    }
