@@ -5,7 +5,7 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Protocol
 
 from movia_sales_agent.agent.graph import MoviaSalesAgent
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 DEDUP_TTL_SECONDS = 60 * 60 * 24 * 7
 LEAD_LOCK_TTL_SECONDS = 120
+STALE_BUFFER_MIN_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class QueuedWhatsAppMessage:
     ctwa_clid: Optional[str] = None
     referral: Optional[Dict[str, Any]] = None
     timestamp: Optional[str] = None
+    enqueued_at: float = field(default_factory=time.time)
 
     @property
     def lead_key(self) -> str:
@@ -56,7 +58,9 @@ class WhatsAppQueue(Protocol):
     async def next_lead(self, timeout_seconds: int = 1) -> Optional[QueuedWhatsAppMessage]:
         ...
 
-    async def collect_batch(self, lead: QueuedWhatsAppMessage) -> List[QueuedWhatsAppMessage]:
+    async def collect_batch(
+        self, lead: QueuedWhatsAppMessage, *, batch_window_seconds: float
+    ) -> List[QueuedWhatsAppMessage]:
         ...
 
     async def acquire_lead_lock(self, lead: QueuedWhatsAppMessage) -> bool:
@@ -97,11 +101,21 @@ class InMemoryWhatsAppQueue:
         except asyncio.TimeoutError:
             return None
 
-    async def collect_batch(self, lead: QueuedWhatsAppMessage) -> List[QueuedWhatsAppMessage]:
+    async def collect_batch(
+        self, lead: QueuedWhatsAppMessage, *, batch_window_seconds: float
+    ) -> List[QueuedWhatsAppMessage]:
         async with self._mutex:
             messages = self._buffers.pop(lead.lead_key, [])
             self._scheduled.discard(lead.lead_key)
-            return messages
+            batch, remaining = split_batch_by_window(
+                messages,
+                batch_window_seconds=batch_window_seconds,
+            )
+            if remaining:
+                self._buffers[lead.lead_key] = remaining
+                self._scheduled.add(lead.lead_key)
+                await self._lead_queue.put(remaining[0])
+            return batch
 
     async def acquire_lead_lock(self, lead: QueuedWhatsAppMessage) -> bool:
         async with self._mutex:
@@ -124,13 +138,17 @@ class InMemoryWhatsAppQueue:
 class RedisWhatsAppQueue:
     durable = True
 
-    def __init__(self, redis_url: str):
+    def __init__(self, redis_url: str, *, stale_buffer_after_seconds: float = STALE_BUFFER_MIN_SECONDS):
         import redis
 
         self._redis = redis.from_url(redis_url, decode_responses=True)
         self._stream = "movia:whatsapp:lead_jobs"
         self._group = "movia-agent"
         self._consumer = f"worker-{int(time.time() * 1000)}"
+        self._stale_buffer_after_seconds = max(
+            STALE_BUFFER_MIN_SECONDS,
+            float(stale_buffer_after_seconds or STALE_BUFFER_MIN_SECONDS),
+        )
         try:
             self._redis.xgroup_create(self._stream, self._group, id="0", mkstream=True)
         except Exception as exc:
@@ -152,6 +170,7 @@ class RedisWhatsAppQueue:
             "ctwa_clid": message.ctwa_clid,
             "referral": message.referral or {},
             "timestamp": message.timestamp,
+            "enqueued_at": message.enqueued_at,
         }
         self._redis.rpush(
             f"movia:whatsapp:lead:{message.lead_key}:messages",
@@ -181,6 +200,7 @@ class RedisWhatsAppQueue:
             block=max(1, timeout_seconds * 1000),
         )
         if not rows:
+            self._reschedule_stale_buffers_sync()
             return None
         _stream_name, entries = rows[0]
         entry_id, fields = entries[0]
@@ -192,10 +212,63 @@ class RedisWhatsAppQueue:
             channel=fields.get("channel") or "whatsapp",
         )
 
-    async def collect_batch(self, lead: QueuedWhatsAppMessage) -> List[QueuedWhatsAppMessage]:
-        return await asyncio.to_thread(self._collect_batch_sync, lead)
+    def _reschedule_stale_buffers_sync(self) -> None:
+        now = time.time()
+        pattern = "movia:whatsapp:lead:*:messages"
+        try:
+            keys = list(self._redis.scan_iter(match=pattern, count=25))
+        except Exception as exc:
+            logger.warning("Redis stale WhatsApp buffer scan failed: %s", exc)
+            return
+        for messages_key in keys:
+            try:
+                if self._redis.llen(messages_key) <= 0:
+                    continue
+                lead_key = messages_key.removeprefix("movia:whatsapp:lead:").removesuffix(
+                    ":messages"
+                )
+                if self._redis.exists(f"movia:whatsapp:lead:{lead_key}:lock"):
+                    continue
+                first_row = self._redis.lindex(messages_key, 0)
+                if not first_row:
+                    continue
+                payload = json.loads(first_row)
+                enqueued_at = float(payload.get("enqueued_at") or now)
+                if now - enqueued_at < self._stale_buffer_after_seconds:
+                    continue
+                self._redis.set(
+                    f"movia:whatsapp:lead:{lead_key}:scheduled",
+                    "1",
+                    ex=LEAD_LOCK_TTL_SECONDS,
+                )
+                self._redis.xadd(
+                    self._stream,
+                    {
+                        "lead_key": lead_key,
+                        "from_number": payload["from_number"],
+                        "channel": payload.get("channel") or "whatsapp",
+                    },
+                )
+                logger.warning(
+                    "Rescheduled stale WhatsApp buffer for lead_key=%s age_seconds=%.1f",
+                    lead_key,
+                    now - enqueued_at,
+                )
+            except Exception as exc:
+                logger.warning("Redis stale WhatsApp buffer recovery failed for %s: %s", messages_key, exc)
 
-    def _collect_batch_sync(self, lead: QueuedWhatsAppMessage) -> List[QueuedWhatsAppMessage]:
+    async def collect_batch(
+        self, lead: QueuedWhatsAppMessage, *, batch_window_seconds: float
+    ) -> List[QueuedWhatsAppMessage]:
+        return await asyncio.to_thread(
+            self._collect_batch_sync,
+            lead,
+            batch_window_seconds,
+        )
+
+    def _collect_batch_sync(
+        self, lead: QueuedWhatsAppMessage, batch_window_seconds: float
+    ) -> List[QueuedWhatsAppMessage]:
         messages_key = f"movia:whatsapp:lead:{lead.lead_key}:messages"
         rows = self._redis.lrange(messages_key, 0, -1)
         self._redis.delete(messages_key)
@@ -212,9 +285,47 @@ class RedisWhatsAppQueue:
                     ctwa_clid=payload.get("ctwa_clid"),
                     referral=payload.get("referral") or {},
                     timestamp=payload.get("timestamp"),
+                    enqueued_at=float(payload.get("enqueued_at") or time.time()),
                 )
             )
-        return messages
+        batch, remaining = split_batch_by_window(
+            messages,
+            batch_window_seconds=batch_window_seconds,
+        )
+        if remaining:
+            pipe = self._redis.pipeline()
+            for message in remaining:
+                pipe.rpush(
+                    messages_key,
+                    json.dumps(
+                        {
+                            "message_id": message.message_id,
+                            "from_number": message.from_number,
+                            "text": message.text,
+                            "channel": message.channel,
+                            "ctwa_clid": message.ctwa_clid,
+                            "referral": message.referral or {},
+                            "timestamp": message.timestamp,
+                            "enqueued_at": message.enqueued_at,
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+            pipe.set(
+                f"movia:whatsapp:lead:{lead.lead_key}:scheduled",
+                "1",
+                ex=LEAD_LOCK_TTL_SECONDS,
+            )
+            pipe.xadd(
+                self._stream,
+                {
+                    "lead_key": lead.lead_key,
+                    "from_number": remaining[0].from_number,
+                    "channel": remaining[0].channel,
+                },
+            )
+            pipe.execute()
+        return batch
 
     async def acquire_lead_lock(self, lead: QueuedWhatsAppMessage) -> bool:
         return await asyncio.to_thread(
@@ -320,7 +431,10 @@ class WhatsAppWorkerManager:
                     {"from_number": lead.from_number, "channel": lead.channel},
                 )
                 await asyncio.sleep(max(0.0, float(self.settings.lead_batch_window_seconds or 0.0)))
-                batch = await self.queue.collect_batch(lead)
+                batch = await self.queue.collect_batch(
+                    lead,
+                    batch_window_seconds=float(self.settings.lead_batch_window_seconds or 0.0),
+                )
                 if not batch:
                     continue
                 await asyncio.to_thread(self._process_batch_sync, batch)
@@ -432,7 +546,11 @@ class WhatsAppWorkerManager:
                 {"action": response.action, "message_count": len(response.response_messages)},
             )
             self._add_run_event(run_id, "info", "whatsapp_send_started", "Outbound send started.", {})
-            send_result = self._send_agent_response(first.from_number, response)
+            send_result = self._send_agent_response(
+                first.from_number,
+                response,
+                force_entry_intent_buttons=any(message.ctwa_clid for message in batch),
+            )
             self._schedule_meta_conversions(response, batch)
             self._add_run_event(
                 run_id,
@@ -495,8 +613,14 @@ class WhatsAppWorkerManager:
         except Exception as exc:
             logger.warning("Meta conversion scheduling failed: %s", exc)
 
-    def _send_agent_response(self, to_number: str, response: Any) -> Dict[str, Any]:
-        if should_send_entry_intent_buttons(response):
+    def _send_agent_response(
+        self,
+        to_number: str,
+        response: Any,
+        *,
+        force_entry_intent_buttons: bool = False,
+    ) -> Dict[str, Any]:
+        if force_entry_intent_buttons or should_send_entry_intent_buttons(response):
             return self._send_entry_intent_buttons(to_number, response)
         messages = list(response.response_messages or []) or [response.response]
         conversation: Optional[ChatwootConversation] = None
@@ -655,7 +779,10 @@ class WhatsAppWorkerManager:
 def build_queue(settings: Settings) -> WhatsAppQueue:
     if settings.webhook_queue_enabled and settings.redis_url:
         try:
-            return RedisWhatsAppQueue(settings.redis_url)
+            return RedisWhatsAppQueue(
+                settings.redis_url,
+                stale_buffer_after_seconds=float(settings.lead_batch_window_seconds or 0.0) + 10.0,
+            )
         except Exception as exc:
             logger.warning("Redis WhatsApp queue unavailable; falling back to in-memory queue: %s", exc)
     return InMemoryWhatsAppQueue()
@@ -668,6 +795,19 @@ def combine_messages(messages: List[QueuedWhatsAppMessage]) -> str:
     for index, message in enumerate(messages, start=1):
         lines.append(f"Mensaje {index}: {message.text}")
     return "\n".join(lines)
+
+
+def split_batch_by_window(
+    messages: List[QueuedWhatsAppMessage], *, batch_window_seconds: float
+) -> tuple[List[QueuedWhatsAppMessage], List[QueuedWhatsAppMessage]]:
+    if not messages:
+        return [], []
+    ordered = sorted(messages, key=lambda message: message.enqueued_at)
+    first_enqueued_at = ordered[0].enqueued_at
+    cutoff = first_enqueued_at + max(0.0, float(batch_window_seconds or 0.0)) + 0.25
+    batch = [message for message in ordered if message.enqueued_at <= cutoff]
+    remaining = [message for message in ordered if message.enqueued_at > cutoff]
+    return batch, remaining
 
 
 def should_send_entry_intent_buttons(response: Any) -> bool:

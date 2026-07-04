@@ -6,7 +6,12 @@ import pytest
 
 from movia_sales_agent.config.settings import Settings
 from movia_sales_agent.whatsapp.client import WhatsAppMessage
-from movia_sales_agent.whatsapp.queue import InMemoryWhatsAppQueue, WhatsAppWorkerManager, build_queue
+from movia_sales_agent.whatsapp.queue import (
+    InMemoryWhatsAppQueue,
+    QueuedWhatsAppMessage,
+    WhatsAppWorkerManager,
+    build_queue,
+)
 
 
 class FakeAgent:
@@ -101,6 +106,37 @@ async def test_same_lead_messages_are_batched_into_one_agent_run():
     assert "Mensaje 2: Cuánto cuesta" in agent.calls[0]["message"]
     assert client.read_typing == [["m1", "m2"]]
     assert len(client.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_same_lead_messages_outside_batch_window_are_not_compacted():
+    queue = InMemoryWhatsAppQueue()
+    base = time.time()
+    first = QueuedWhatsAppMessage(
+        message_id="m1",
+        from_number="lead-a",
+        text="Hola",
+        enqueued_at=base,
+    )
+    second = QueuedWhatsAppMessage(
+        message_id="m2",
+        from_number="lead-a",
+        text="Sigo aquí",
+        enqueued_at=base + 180,
+    )
+
+    assert await queue.enqueue(first) == "queued"
+    assert await queue.enqueue(second) == "queued"
+    lead = await queue.next_lead(timeout_seconds=1)
+    assert lead is not None
+
+    batch = await queue.collect_batch(lead, batch_window_seconds=20)
+    assert [message.message_id for message in batch] == ["m1"]
+
+    next_lead = await queue.next_lead(timeout_seconds=1)
+    assert next_lead is not None
+    next_batch = await queue.collect_batch(next_lead, batch_window_seconds=20)
+    assert [message.message_id for message in next_batch] == ["m2"]
 
 
 @pytest.mark.asyncio
@@ -228,6 +264,38 @@ async def test_worker_sends_entry_intent_as_whatsapp_interactive_buttons():
     assert client.sent == []
     assert chatwoot.public_messages == []
     assert "interactive button message" in chatwoot.private_notes[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_worker_sends_ctwa_first_touch_as_whatsapp_interactive_buttons():
+    agent = FakeAgent(selected_action={"next_question_key": "business_type"})
+    client = FakeClient()
+    chatwoot = FakeChatwootClient()
+    manager = WhatsAppWorkerManager(
+        settings=queue_settings(MOVIA_LEAD_BATCH_WINDOW_SECONDS=0),
+        agent=agent,
+        client=client,
+        queue=InMemoryWhatsAppQueue(),
+        chatwoot_client=chatwoot,
+    )
+    await manager.start()
+    try:
+        await manager.enqueue(
+            WhatsAppMessage(
+                "m1",
+                "lead-a",
+                "Hola, quiero más información",
+                ctwa_clid="ctwa-123",
+                referral={"campaign_id": "camp-1"},
+            )
+        )
+        await wait_for(lambda: len(client.interactive_buttons) == 1)
+    finally:
+        await manager.stop()
+
+    assert client.interactive_buttons == [{"to": "lead-a"}]
+    assert client.sent == []
+    assert chatwoot.public_messages == []
 
 
 @pytest.mark.asyncio
