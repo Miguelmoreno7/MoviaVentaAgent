@@ -10,9 +10,10 @@ from movia_sales_agent.whatsapp.queue import InMemoryWhatsAppQueue, WhatsAppWork
 
 
 class FakeAgent:
-    def __init__(self, delay: float = 0.0, response_messages=None):
+    def __init__(self, delay: float = 0.0, response_messages=None, selected_action=None):
         self.delay = delay
         self.response_messages = response_messages
+        self.selected_action = selected_action or {}
         self.calls = []
         self.starts = []
 
@@ -33,6 +34,7 @@ class FakeAgent:
             response=f"respuesta para {lead_external_id}",
             response_messages=self.response_messages or [f"respuesta para {lead_external_id}"],
             response_metadata={"response_source": "fake"},
+            selected_action=self.selected_action,
             token_usage={"total": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}},
         )
 
@@ -40,11 +42,16 @@ class FakeAgent:
 class FakeClient:
     def __init__(self):
         self.sent = []
+        self.interactive_buttons = []
         self.read_typing = []
 
     def send_text(self, to_number, text):
         self.sent.append({"to": to_number, "text": text})
         return {"mocked": True}
+
+    def send_entry_intent_buttons(self, to_number):
+        self.interactive_buttons.append({"to": to_number})
+        return {"mocked": True, "interactive": True}
 
     def mark_messages_read_with_typing(self, message_ids):
         message_ids = list(message_ids)
@@ -199,6 +206,31 @@ async def test_worker_does_not_whatsapp_fallback_after_partial_chatwoot_send():
 
 
 @pytest.mark.asyncio
+async def test_worker_sends_entry_intent_as_whatsapp_interactive_buttons():
+    agent = FakeAgent(selected_action={"next_question_key": "entry_intent"})
+    client = FakeClient()
+    chatwoot = FakeChatwootClient()
+    manager = WhatsAppWorkerManager(
+        settings=queue_settings(MOVIA_LEAD_BATCH_WINDOW_SECONDS=0),
+        agent=agent,
+        client=client,
+        queue=InMemoryWhatsAppQueue(),
+        chatwoot_client=chatwoot,
+    )
+    await manager.start()
+    try:
+        await manager.enqueue(WhatsAppMessage("m1", "lead-a", "Hola"))
+        await wait_for(lambda: len(client.interactive_buttons) == 1)
+    finally:
+        await manager.stop()
+
+    assert client.interactive_buttons == [{"to": "lead-a"}]
+    assert client.sent == []
+    assert chatwoot.public_messages == []
+    assert "interactive button message" in chatwoot.private_notes[0]["content"]
+
+
+@pytest.mark.asyncio
 async def test_worker_schedules_meta_conversions_with_batch_ctwa_metadata():
     agent = FakeAgent()
     client = FakeClient()
@@ -268,7 +300,7 @@ class FakeChatwootClient:
         self.public_messages = []
         self.private_notes = []
 
-    def resolve_conversation_for_lead(self, *, lead_id, whatsapp_number):
+    def resolve_conversation_for_lead(self, *, lead_id, whatsapp_number, **_kwargs):
         self.resolved_numbers.append(whatsapp_number)
         from movia_sales_agent.chatwoot.client import ChatwootConversation
 

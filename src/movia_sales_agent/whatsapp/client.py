@@ -11,6 +11,21 @@ from movia_sales_agent.whatsapp.formatting import split_whatsapp_messages
 
 logger = logging.getLogger(__name__)
 
+ENTRY_INTENT_BUTTONS = [
+    {"id": "entry_prices", "title": "Ver precios", "text": "Quiero ver precios"},
+    {"id": "entry_choose_agent", "title": "Elegir agente", "text": "Ayúdame a elegir agente"},
+    {"id": "entry_how_it_works", "title": "Cómo funciona", "text": "Quiero saber cómo funciona"},
+]
+ENTRY_INTENT_BODY = (
+    "¡Hola! Soy el asistente de MovIA.\n\n"
+    "Te puedo ayudar a ver si un agente para WhatsApp tiene sentido para tu negocio.\n\n"
+    "¿Qué te gustaría revisar primero?"
+)
+INTERACTIVE_REPLY_TEXT_BY_ID = {
+    button["id"]: button["text"]
+    for button in ENTRY_INTENT_BUTTONS
+}
+
 
 class WhatsAppMessage:
     def __init__(
@@ -87,7 +102,7 @@ class WhatsAppClient:
         fallback_referral: Any = None,
     ) -> WhatsAppMessage | None:
         if not isinstance(message, dict) or message.get("type") != "text":
-            return None
+            return self._parse_interactive_reply(message, fallback_referral=fallback_referral)
         text_payload = message.get("text") or {}
         text = text_payload.get("body") if isinstance(text_payload, dict) else None
         from_number = message.get("from")
@@ -105,6 +120,38 @@ class WhatsAppClient:
             )
         return None
 
+    def _parse_interactive_reply(
+        self,
+        message: Any,
+        *,
+        fallback_referral: Any = None,
+    ) -> WhatsAppMessage | None:
+        if not isinstance(message, dict) or message.get("type") != "interactive":
+            return None
+        interactive = message.get("interactive")
+        if not isinstance(interactive, dict):
+            return None
+        button_reply = interactive.get("button_reply")
+        if not isinstance(button_reply, dict):
+            return None
+        reply_id = str(button_reply.get("id") or "")
+        title = str(button_reply.get("title") or "")
+        text = INTERACTIVE_REPLY_TEXT_BY_ID.get(reply_id) or title
+        from_number = message.get("from")
+        message_id = message.get("id")
+        referral = compact_referral(message.get("referral") or fallback_referral)
+        ctwa_clid = extract_ctwa_clid(message, referral)
+        if text and from_number and message_id:
+            return WhatsAppMessage(
+                str(message_id),
+                str(from_number),
+                text,
+                ctwa_clid=ctwa_clid,
+                referral=referral,
+                timestamp=str(message.get("timestamp")) if message.get("timestamp") else None,
+            )
+        return None
+
     def send_text(self, to_number: str, text: str) -> Dict[str, Any]:
         messages = split_whatsapp_messages(text)
         if len(messages) <= 1:
@@ -114,6 +161,49 @@ class WhatsAppClient:
             result = self._send_single_text(to_number, message)
             results.append({"index": index, "text": message, "result": result})
         return {"split": True, "count": len(results), "messages": results}
+
+    def send_entry_intent_buttons(self, to_number: str) -> Dict[str, Any]:
+        return self.send_interactive_reply_buttons(
+            to_number,
+            body=ENTRY_INTENT_BODY,
+            buttons=ENTRY_INTENT_BUTTONS,
+        )
+
+    def send_interactive_reply_buttons(
+        self,
+        to_number: str,
+        *,
+        body: str,
+        buttons: List[Dict[str, str]],
+    ) -> Dict[str, Any]:
+        normalized_buttons = [
+            {"type": "reply", "reply": {"id": button["id"], "title": button["title"]}}
+            for button in buttons[:3]
+        ]
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to_number,
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": body},
+                "action": {"buttons": normalized_buttons},
+            },
+        }
+        if not self.enabled:
+            return {"mocked": True, "to": to_number, "payload": payload}
+        url = (
+            "https://graph.facebook.com/v20.0/"
+            f"{self.settings.meta_whatsapp_phone_number_id}/messages"
+        )
+        headers = {
+            "Authorization": f"Bearer {self.settings.meta_whatsapp_access_token}",
+            "Content-Type": "application/json",
+        }
+        with httpx.Client(timeout=15) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            return response.json()
 
     def mark_read_with_typing(self, message_id: str) -> Dict[str, Any]:
         return self._mark_read(message_id, include_typing=True)

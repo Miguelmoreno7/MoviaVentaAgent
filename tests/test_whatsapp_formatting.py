@@ -131,6 +131,49 @@ def test_whatsapp_client_parses_direct_body_messages_payload():
     assert messages[0].text == "Hola directo"
 
 
+def test_whatsapp_client_parses_interactive_button_reply_as_text():
+    client = WhatsAppClient(mocked_settings())
+
+    messages = client.parse_messages(
+        {
+            "messages": [
+                {
+                    "from": "5218717876121",
+                    "id": "wamid.button",
+                    "timestamp": "1782071899",
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "button_reply",
+                        "button_reply": {"id": "entry_prices", "title": "Ver precios"},
+                    },
+                }
+            ]
+        }
+    )
+
+    assert len(messages) == 1
+    assert messages[0].message_id == "wamid.button"
+    assert messages[0].text == "Quiero ver precios"
+
+
+def test_whatsapp_client_sends_entry_intent_interactive_buttons_mocked():
+    client = WhatsAppClient(mocked_settings())
+
+    result = client.send_entry_intent_buttons("5218180000000")
+
+    assert result["mocked"] is True
+    payload = result["payload"]
+    assert payload["type"] == "interactive"
+    assert payload["interactive"]["type"] == "button"
+    assert payload["interactive"]["body"]["text"].startswith("¡Hola! Soy el asistente de MovIA.")
+    buttons = payload["interactive"]["action"]["buttons"]
+    assert [button["reply"]["title"] for button in buttons] == [
+        "Ver precios",
+        "Elegir agente",
+        "Cómo funciona",
+    ]
+
+
 def test_whatsapp_client_marks_read_with_typing_mocked_without_meta_credentials():
     client = WhatsAppClient(mocked_settings())
 

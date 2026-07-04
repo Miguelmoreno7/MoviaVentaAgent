@@ -27,7 +27,7 @@ from movia_sales_agent.runtime.metadata import (
     compact_retrieval_metadata,
 )
 from movia_sales_agent.whatsapp.client import WhatsAppClient
-from movia_sales_agent.whatsapp.queue import WhatsAppWorkerManager
+from movia_sales_agent.whatsapp.queue import WhatsAppWorkerManager, should_send_entry_intent_buttons
 
 
 FRONTEND_ROOT = PROJECT_ROOT / "frontend"
@@ -317,6 +317,10 @@ async def run_agent_and_send(
         )
         chatwoot = ChatwootClient(settings, repository=getattr(agent, "repository", None))
         conversation = None
+        if should_send_entry_intent_buttons(response):
+            client.send_entry_intent_buttons(inbound.from_number)
+            schedule_meta_conversions(settings, agent, inbound, response)
+            return response
         if chatwoot.enabled:
             try:
                 conversation = chatwoot.resolve_conversation_for_lead(

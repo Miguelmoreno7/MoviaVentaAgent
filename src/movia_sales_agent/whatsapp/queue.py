@@ -496,6 +496,8 @@ class WhatsAppWorkerManager:
             logger.warning("Meta conversion scheduling failed: %s", exc)
 
     def _send_agent_response(self, to_number: str, response: Any) -> Dict[str, Any]:
+        if should_send_entry_intent_buttons(response):
+            return self._send_entry_intent_buttons(to_number, response)
         messages = list(response.response_messages or []) or [response.response]
         conversation: Optional[ChatwootConversation] = None
         if self.chatwoot_client.enabled:
@@ -551,6 +553,35 @@ class WhatsAppWorkerManager:
                 logger.warning("Chatwoot fallback private note failed: %s", exc)
                 fallback_result["chatwoot_private_note_error"] = str(exc)
         return fallback_result
+
+    def _send_entry_intent_buttons(self, to_number: str, response: Any) -> Dict[str, Any]:
+        result = self.client.send_entry_intent_buttons(to_number)
+        send_result: Dict[str, Any] = {
+            "transport": "whatsapp_interactive_buttons",
+            "fallback_used": False,
+            "whatsapp_result": result,
+        }
+        if self.chatwoot_client.enabled:
+            try:
+                conversation = self.chatwoot_client.resolve_conversation_for_lead(
+                    lead_id=getattr(response, "lead_id", None),
+                    whatsapp_number=to_number,
+                    attempts=1,
+                    retry_delays=(0.0,),
+                )
+                if conversation:
+                    send_result["chatwoot_private_note"] = self.chatwoot_client.send_private_note(
+                        conversation,
+                        (
+                            "MovIA sent the first-touch interactive button message directly "
+                            "through WhatsApp Cloud API:\n\n"
+                            f"{response.response}"
+                        ),
+                    )
+            except Exception as exc:
+                logger.warning("Chatwoot interactive button private note failed: %s", exc)
+                send_result["chatwoot_private_note_error"] = str(exc)
+        return send_result
 
     def _record_queue_event(self, event_type: str, message: str, payload: Dict[str, Any]) -> None:
         logger.info("%s: %s %s", event_type, message, payload)
@@ -637,3 +668,8 @@ def combine_messages(messages: List[QueuedWhatsAppMessage]) -> str:
     for index, message in enumerate(messages, start=1):
         lines.append(f"Mensaje {index}: {message.text}")
     return "\n".join(lines)
+
+
+def should_send_entry_intent_buttons(response: Any) -> bool:
+    selected_action = getattr(response, "selected_action", None) or {}
+    return selected_action.get("next_question_key") == "entry_intent"
