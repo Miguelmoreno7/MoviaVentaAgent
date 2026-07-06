@@ -17,8 +17,8 @@ ENTRY_INTENT_BUTTONS = [
     {"id": "entry_how_it_works", "title": "Cómo funciona", "text": "Quiero saber cómo funciona"},
 ]
 ENTRY_INTENT_BODY = (
-    "¡Hola! Soy el asistente de MovIA.\n\n"
-    "Te puedo ayudar a ver si un agente para WhatsApp tiene sentido para tu negocio.\n\n"
+    "Hola! Soy el asistente de MovIA.\n\n"
+    "Te ayudo a revisar si MovIA Captura o MovIA Híbrido tienen sentido para tu negocio.\n\n"
     "¿Qué te gustaría revisar primero?"
 )
 INTERACTIVE_REPLY_TEXT_BY_ID = {

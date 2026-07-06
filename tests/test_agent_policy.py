@@ -325,6 +325,17 @@ def test_explicit_start_with_unavailable_product_does_not_direct_close():
     assert plan.reason_code == PlannerReasonCode.SALES_PRODUCT_UNAVAILABLE.value
 
 
+def test_unavailable_product_response_redirects_without_naming_inactive_products():
+    agent = MoviaSalesAgent(offline_settings())
+
+    result = agent.invoke("Quiero MovIA Ventas.", lead_external_id="inactive-product-public-copy")
+
+    assert "MovIA Captura" in result.response
+    assert "MovIA Híbrido" in result.response
+    assert "MovIA Ventas" not in result.response
+    assert "Pro Comercial" not in result.response
+
+
 def test_active_objection_continuation_does_not_reset_to_first_response():
     plan = plan_for(
         TurnAnalysis(primary_intent=Intent.GENERAL_INFO),
@@ -426,7 +437,7 @@ def test_greeting_with_business_context_still_moves_to_discovery():
     assert "Soy el asistente de MovIA" not in result.response
 
 
-def test_repeated_greeting_without_context_keeps_warm_entry_policy():
+def test_repeated_greeting_without_context_does_not_repeat_warm_entry_policy():
     agent = MoviaSalesAgent(offline_settings())
     lead_id = "warm-entry-returning-lead"
 
@@ -434,8 +445,8 @@ def test_repeated_greeting_without_context_keeps_warm_entry_policy():
     second = agent.invoke("Hola", lead_external_id=lead_id)
 
     assert first.selected_action["next_question_key"] == "entry_intent"
-    assert second.selected_action["next_question_key"] == "entry_intent"
-    assert "Soy el asistente de MovIA" in second.response
+    assert second.selected_action["next_question_key"] != "entry_intent"
+    assert "Soy el asistente de MovIA" not in second.response
 
 
 def test_greeting_after_business_context_does_not_reset_to_warm_entry():

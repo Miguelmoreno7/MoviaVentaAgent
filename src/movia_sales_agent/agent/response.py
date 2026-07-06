@@ -25,7 +25,7 @@ Responde solo con información oficial recibida en contexto.
 No inventes precios, tiempos, links, features, canales ni políticas.
 Actualmente WhatsApp Business está disponible; Facebook e Instagram están en proceso.
 MovIA Captura y MovIA Híbrido están disponibles.
-MovIA Ventas y MovIA Pro Comercial no están disponibles y deben presentarse como futuros.
+En respuestas públicas enfócate en MovIA Captura y MovIA Híbrido.
 No resuelvas soporte post-compra complejo; redirige a Miguel.
 Habla claro, cercano, consultivo y breve.
 Redacta para WhatsApp: párrafos cortos, listas fáciles de escanear y una sola idea por bloque.
@@ -254,15 +254,14 @@ def fallback_response(message: str, analysis: TurnAnalysis, sales_plan: SalesPla
 
     if sales_plan.micro_action == MicroAction.EXPLAIN_VENTAS_NOT_AVAILABLE.value:
         return (
-            "MovIA Ventas todavía no está disponible como producto activo, así que no te lo vendería como si ya estuviera listo. "
-            "Hoy podemos revisar si Captura o Híbrido cubren tu necesidad actual: responder, capturar datos o hacer acciones operativas acordadas. "
+            "Hoy podemos revisar si MovIA Captura o MovIA Híbrido cubren tu necesidad actual: responder, capturar datos o hacer acciones operativas acordadas. "
             "¿Qué necesitas que haga el agente después de responder?"
         )
 
     if sales_plan.micro_action == MicroAction.EXPLAIN_PRO_COMERCIAL_NOT_AVAILABLE.value:
         return (
-            "MovIA Pro Comercial aún no está disponible como producto activo. Si tu alcance es muy personalizado, conviene revisarlo aparte "
-            "con Miguel; si tu necesidad es responder, capturar datos o hacer acciones operativas acordadas, puedo orientarte entre Captura e Híbrido. "
+            "Si tu alcance es muy personalizado, conviene revisarlo aparte con Miguel. "
+            "Si tu necesidad es responder, capturar datos o hacer acciones operativas acordadas, puedo orientarte entre MovIA Captura y MovIA Híbrido. "
             "¿Qué proceso quieres automatizar?"
         )
 

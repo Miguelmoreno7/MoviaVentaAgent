@@ -165,7 +165,11 @@ def test_whatsapp_client_sends_entry_intent_interactive_buttons_mocked():
     payload = result["payload"]
     assert payload["type"] == "interactive"
     assert payload["interactive"]["type"] == "button"
-    assert payload["interactive"]["body"]["text"].startswith("¡Hola! Soy el asistente de MovIA.")
+    body = payload["interactive"]["body"]["text"]
+    assert body.startswith("Hola! Soy el asistente de MovIA.")
+    assert "MovIA Captura" in body
+    assert "MovIA Híbrido" in body
+    assert "¡Hola!" not in body
     buttons = payload["interactive"]["action"]["buttons"]
     assert [button["reply"]["title"] for button in buttons] == [
         "Ver precios",

@@ -765,7 +765,7 @@ def _unavailable_product_plan(state: PlannerState) -> Optional[SalesPlan]:
         return make_plan(
             MacroAction.RECOMMEND_SOLUTION,
             MicroAction.EXPLAIN_VENTAS_NOT_AVAILABLE,
-            "Explicar que MovIA Ventas no está disponible y redirigir a productos activos.",
+            "Redirigir a MovIA Captura o MovIA Híbrido sin abrir productos no activos.",
             CTAType.SOFT_QUESTION,
             SalesStage.EDUCATING,
             PlannerReasonCode.SALES_PRODUCT_UNAVAILABLE,
@@ -774,7 +774,7 @@ def _unavailable_product_plan(state: PlannerState) -> Optional[SalesPlan]:
         return make_plan(
             MacroAction.RECOMMEND_SOLUTION,
             MicroAction.EXPLAIN_PRO_COMERCIAL_NOT_AVAILABLE,
-            "Explicar que Pro Comercial no está disponible y ofrecer revisión del alcance.",
+            "Redirigir a MovIA Captura o MovIA Híbrido, o a revisión humana si el alcance es personalizado.",
             CTAType.SOFT_QUESTION,
             SalesStage.EDUCATING,
             PlannerReasonCode.PRO_PRODUCT_UNAVAILABLE,
@@ -963,6 +963,8 @@ def _missing_core_discovery_key(state: PlannerState) -> Optional[str]:
 
 def _is_first_touch_greeting(state: PlannerState) -> bool:
     if state.analysis.primary_intent != Intent.GREETING.value:
+        return False
+    if state.last_macro_action:
         return False
     meaningful_topics = [topic for topic in state.analysis.topics if topic != Topic.UNKNOWN.value]
     if meaningful_topics:
