@@ -15,10 +15,17 @@ from movia_sales_agent.whatsapp.queue import (
 
 
 class FakeAgent:
-    def __init__(self, delay: float = 0.0, response_messages=None, selected_action=None):
+    def __init__(
+        self,
+        delay: float = 0.0,
+        response_messages=None,
+        selected_action=None,
+        lead_state=None,
+    ):
         self.delay = delay
         self.response_messages = response_messages
         self.selected_action = selected_action or {}
+        self.lead_state = lead_state or {"current_stage": "new", "profile_data": {}}
         self.calls = []
         self.starts = []
 
@@ -40,6 +47,7 @@ class FakeAgent:
             response_messages=self.response_messages or [f"respuesta para {lead_external_id}"],
             response_metadata={"response_source": "fake"},
             selected_action=self.selected_action,
+            lead_state=self.lead_state,
             token_usage={"total": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}},
         )
 
@@ -57,6 +65,10 @@ class FakeClient:
     def send_entry_intent_buttons(self, to_number):
         self.interactive_buttons.append({"to": to_number})
         return {"mocked": True, "interactive": True}
+
+    def send_interactive_reply_buttons(self, to_number, *, body, buttons):
+        self.interactive_buttons.append({"to": to_number, "body": body, "buttons": buttons})
+        return {"mocked": True, "interactive": True, "body": body, "buttons": buttons}
 
     def mark_messages_read_with_typing(self, message_ids):
         message_ids = list(message_ids)
@@ -168,6 +180,25 @@ async def test_duplicate_message_id_is_not_queued_twice():
 
     assert await queue.enqueue(to_queued(message)) == "queued"
     assert await queue.enqueue(to_queued(message)) == "duplicate"
+
+
+@pytest.mark.asyncio
+async def test_interactive_button_id_survives_in_memory_batching():
+    queue = InMemoryWhatsAppQueue()
+    message = WhatsAppMessage(
+        "m1",
+        "lead-a",
+        "Quiero ver precios",
+        interactive_button_id="entry_prices",
+    )
+
+    assert await queue.enqueue(to_queued(message)) == "queued"
+    lead = await queue.next_lead(timeout_seconds=1)
+    assert lead is not None
+    batch = await queue.collect_batch(lead, batch_window_seconds=0)
+
+    assert len(batch) == 1
+    assert batch[0].interactive_button_id == "entry_prices"
 
 
 @pytest.mark.asyncio
@@ -343,6 +374,93 @@ async def test_worker_does_not_force_ctwa_buttons_for_specific_pricing_turn():
 
 
 @pytest.mark.asyncio
+async def test_worker_sends_price_qualification_packet_for_entry_prices_button():
+    agent = FakeAgent(
+        selected_action={
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_general_then_discover_need",
+            "target_stage": "new",
+        }
+    )
+    client = FakeClient()
+    chatwoot = FakeChatwootClient()
+    manager = WhatsAppWorkerManager(
+        settings=queue_settings(MOVIA_LEAD_BATCH_WINDOW_SECONDS=0),
+        agent=agent,
+        client=client,
+        queue=InMemoryWhatsAppQueue(),
+        chatwoot_client=chatwoot,
+    )
+    await manager.start()
+    try:
+        await manager.enqueue(
+            WhatsAppMessage(
+                "m1",
+                "lead-a",
+                "Quiero ver precios",
+                interactive_button_id="entry_prices",
+            )
+        )
+        await wait_for(lambda: len(client.interactive_buttons) == 1)
+    finally:
+        await manager.stop()
+
+    sent = client.interactive_buttons[0]
+    assert "Para darte el precio correcto" in sent["body"]
+    assert "$4,900" not in sent["body"]
+    assert [button["title"] for button in sent["buttons"]] == [
+        "Responder dudas",
+        "Hacer acciones",
+        "No sé todavía",
+    ]
+    assert chatwoot.public_messages == []
+    assert "early-funnel interactive button message" in chatwoot.private_notes[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_worker_bypasses_interactive_packet_for_meaningful_free_text_batch():
+    agent = FakeAgent(
+        selected_action={
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_general_then_discover_need",
+            "target_stage": "new",
+        }
+    )
+    client = FakeClient()
+    chatwoot = FakeChatwootClient()
+    manager = WhatsAppWorkerManager(
+        settings=queue_settings(MOVIA_LEAD_BATCH_WINDOW_SECONDS=0),
+        agent=agent,
+        client=client,
+        queue=InMemoryWhatsAppQueue(),
+        chatwoot_client=chatwoot,
+    )
+    await manager.start()
+    try:
+        await manager.enqueue(
+            WhatsAppMessage(
+                "m1",
+                "lead-a",
+                "Quiero ver precios",
+                interactive_button_id="entry_prices",
+            )
+        )
+        await manager.enqueue(
+            WhatsAppMessage(
+                "m2",
+                "lead-a",
+                "Tengo una clínica dental y quiero agendar citas",
+            )
+        )
+        await wait_for(lambda: len(chatwoot.public_messages) == 1)
+    finally:
+        await manager.stop()
+
+    assert client.interactive_buttons == []
+    assert chatwoot.public_messages[0]["messages"] == ["respuesta para lead-a"]
+
+
+@pytest.mark.asyncio
 async def test_worker_schedules_meta_conversions_with_batch_ctwa_metadata():
     agent = FakeAgent()
     client = FakeClient()
@@ -389,6 +507,7 @@ def to_queued(message):
         message_id=message.message_id,
         from_number=message.from_number,
         text=message.text,
+        interactive_button_id=message.interactive_button_id,
     )
 
 

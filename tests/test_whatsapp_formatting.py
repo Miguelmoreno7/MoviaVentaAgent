@@ -154,6 +154,57 @@ def test_whatsapp_client_parses_interactive_button_reply_as_text():
     assert len(messages) == 1
     assert messages[0].message_id == "wamid.button"
     assert messages[0].text == "Quiero ver precios"
+    assert messages[0].interactive_button_id == "entry_prices"
+
+
+def test_whatsapp_client_parses_new_interactive_button_reply_as_rich_text():
+    client = WhatsAppClient(mocked_settings())
+
+    messages = client.parse_messages(
+        {
+            "messages": [
+                {
+                    "from": "5218717876121",
+                    "id": "wamid.button.need",
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "button_reply",
+                        "button_reply": {"id": "need_actions", "title": "Hacer acciones"},
+                    },
+                }
+            ]
+        }
+    )
+
+    assert len(messages) == 1
+    assert messages[0].interactive_button_id == "need_actions"
+    assert messages[0].text == (
+        "Necesito que también haga acciones como agendar, cotizar o registrar información"
+    )
+
+
+def test_whatsapp_client_unknown_interactive_button_reply_falls_back_to_title():
+    client = WhatsAppClient(mocked_settings())
+
+    messages = client.parse_messages(
+        {
+            "messages": [
+                {
+                    "from": "5218717876121",
+                    "id": "wamid.button.unknown",
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "button_reply",
+                        "button_reply": {"id": "unknown_button", "title": "Otra opción"},
+                    },
+                }
+            ]
+        }
+    )
+
+    assert len(messages) == 1
+    assert messages[0].interactive_button_id == "unknown_button"
+    assert messages[0].text == "Otra opción"
 
 
 def test_whatsapp_client_sends_entry_intent_interactive_buttons_mocked():

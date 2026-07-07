@@ -23,6 +23,10 @@ from movia_sales_agent.platform.observability import (
     response_output_json,
 )
 from movia_sales_agent.whatsapp.client import WhatsAppClient, WhatsAppMessage
+from movia_sales_agent.whatsapp.interactive_policy import (
+    InteractivePacket,
+    resolve_interactive_packet,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -41,6 +45,7 @@ class QueuedWhatsAppMessage:
     ctwa_clid: Optional[str] = None
     referral: Optional[Dict[str, Any]] = None
     timestamp: Optional[str] = None
+    interactive_button_id: Optional[str] = None
     enqueued_at: float = field(default_factory=time.time)
 
     @property
@@ -170,6 +175,7 @@ class RedisWhatsAppQueue:
             "ctwa_clid": message.ctwa_clid,
             "referral": message.referral or {},
             "timestamp": message.timestamp,
+            "interactive_button_id": message.interactive_button_id,
             "enqueued_at": message.enqueued_at,
         }
         self._redis.rpush(
@@ -285,6 +291,7 @@ class RedisWhatsAppQueue:
                     ctwa_clid=payload.get("ctwa_clid"),
                     referral=payload.get("referral") or {},
                     timestamp=payload.get("timestamp"),
+                    interactive_button_id=payload.get("interactive_button_id"),
                     enqueued_at=float(payload.get("enqueued_at") or time.time()),
                 )
             )
@@ -306,6 +313,7 @@ class RedisWhatsAppQueue:
                             "ctwa_clid": message.ctwa_clid,
                             "referral": message.referral or {},
                             "timestamp": message.timestamp,
+                            "interactive_button_id": message.interactive_button_id,
                             "enqueued_at": message.enqueued_at,
                         },
                         ensure_ascii=False,
@@ -381,6 +389,7 @@ class WhatsAppWorkerManager:
         )
         self._tasks: List[asyncio.Task] = []
         self._stopping = asyncio.Event()
+        self._interactive_packet_counts: Dict[str, int] = {}
 
     @property
     def durable(self) -> bool:
@@ -411,6 +420,7 @@ class WhatsAppWorkerManager:
             ctwa_clid=message.ctwa_clid,
             referral=message.referral,
             timestamp=message.timestamp,
+            interactive_button_id=message.interactive_button_id,
         )
         return await self.queue.enqueue(queued)
 
@@ -549,6 +559,7 @@ class WhatsAppWorkerManager:
             send_result = self._send_agent_response(
                 first.from_number,
                 response,
+                batch=batch,
                 force_entry_intent_buttons=should_send_campaign_entry_intent_buttons(
                     response,
                     batch,
@@ -621,10 +632,24 @@ class WhatsAppWorkerManager:
         to_number: str,
         response: Any,
         *,
+        batch: Optional[List[QueuedWhatsAppMessage]] = None,
         force_entry_intent_buttons: bool = False,
     ) -> Dict[str, Any]:
         if force_entry_intent_buttons or should_send_entry_intent_buttons(response):
+            self._interactive_packet_counts[to_number] = (
+                self._interactive_packet_counts.get(to_number, 0) + 1
+            )
             return self._send_entry_intent_buttons(to_number, response)
+        packet = resolve_interactive_packet(
+            response=response,
+            batch=batch or [],
+            sent_count=self._interactive_packet_counts.get(to_number, 0),
+        )
+        if packet:
+            self._interactive_packet_counts[to_number] = (
+                self._interactive_packet_counts.get(to_number, 0) + 1
+            )
+            return self._send_interactive_packet(to_number, response, packet)
         messages = list(response.response_messages or []) or [response.response]
         conversation: Optional[ChatwootConversation] = None
         if self.chatwoot_client.enabled:
@@ -680,6 +705,45 @@ class WhatsAppWorkerManager:
                 logger.warning("Chatwoot fallback private note failed: %s", exc)
                 fallback_result["chatwoot_private_note_error"] = str(exc)
         return fallback_result
+
+    def _send_interactive_packet(
+        self,
+        to_number: str,
+        response: Any,
+        packet: InteractivePacket,
+    ) -> Dict[str, Any]:
+        result = self.client.send_interactive_reply_buttons(
+            to_number,
+            body=packet.body,
+            buttons=packet.buttons,
+        )
+        send_result: Dict[str, Any] = {
+            "transport": "whatsapp_interactive_buttons",
+            "fallback_used": False,
+            "interactive_packet_key": packet.key,
+            "whatsapp_result": result,
+        }
+        if self.chatwoot_client.enabled:
+            try:
+                conversation = self.chatwoot_client.resolve_conversation_for_lead(
+                    lead_id=getattr(response, "lead_id", None),
+                    whatsapp_number=to_number,
+                    attempts=1,
+                    retry_delays=(0.0,),
+                )
+                if conversation:
+                    send_result["chatwoot_private_note"] = self.chatwoot_client.send_private_note(
+                        conversation,
+                        (
+                            "MovIA sent an early-funnel interactive button message directly "
+                            "through WhatsApp Cloud API:\n\n"
+                            f"{packet.body}"
+                        ),
+                    )
+            except Exception as exc:
+                logger.warning("Chatwoot interactive packet private note failed: %s", exc)
+                send_result["chatwoot_private_note_error"] = str(exc)
+        return send_result
 
     def _send_entry_intent_buttons(self, to_number: str, response: Any) -> Dict[str, Any]:
         result = self.client.send_entry_intent_buttons(to_number)

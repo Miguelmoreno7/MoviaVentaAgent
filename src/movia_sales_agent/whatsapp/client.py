@@ -25,6 +25,16 @@ INTERACTIVE_REPLY_TEXT_BY_ID = {
     button["id"]: button["text"]
     for button in ENTRY_INTENT_BUTTONS
 }
+INTERACTIVE_REPLY_TEXT_BY_ID.update(
+    {
+        "need_answers": "Solo necesito que el agente responda dudas y capture datos por WhatsApp",
+        "need_actions": "Necesito que también haga acciones como agendar, cotizar o registrar información",
+        "need_unsure": "No estoy seguro de qué tipo de agente necesito",
+        "start_now": "Quiero empezar",
+        "ask_question": "Tengo una duda",
+        "review_scope": "Quiero revisar si mi caso entra en el alcance",
+    }
+)
 
 
 class WhatsAppMessage:
@@ -37,6 +47,7 @@ class WhatsAppMessage:
         ctwa_clid: Optional[str] = None,
         referral: Optional[Dict[str, Any]] = None,
         timestamp: Optional[str] = None,
+        interactive_button_id: Optional[str] = None,
     ):
         self.message_id = message_id
         self.from_number = from_number
@@ -44,6 +55,7 @@ class WhatsAppMessage:
         self.ctwa_clid = ctwa_clid
         self.referral = referral or {}
         self.timestamp = timestamp
+        self.interactive_button_id = interactive_button_id
 
 
 class WhatsAppClient:
@@ -149,6 +161,7 @@ class WhatsAppClient:
                 ctwa_clid=ctwa_clid,
                 referral=referral,
                 timestamp=str(message.get("timestamp")) if message.get("timestamp") else None,
+                interactive_button_id=reply_id or None,
             )
         return None
 
