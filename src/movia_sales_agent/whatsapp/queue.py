@@ -548,6 +548,19 @@ class WhatsAppWorkerManager:
                 channel=first.channel,
                 external_message_id=external_message_id,
             )
+            logger.info(
+                "movia_agent_turn_diagnostics=%s",
+                json.dumps(
+                    turn_diagnostics_payload(
+                        run_id=run_id,
+                        input_json=input_json,
+                        response=response,
+                    ),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                ),
+            )
             self._add_run_event(
                 run_id,
                 "info",
@@ -927,3 +940,85 @@ def should_send_campaign_entry_intent_buttons(
         "automation_need",
         "action_requirement",
     }
+
+
+def turn_diagnostics_payload(
+    *,
+    run_id: Optional[str],
+    input_json: Dict[str, Any],
+    response: Any,
+) -> Dict[str, Any]:
+    analysis = _model_dump(getattr(response, "analysis", None))
+    response_metadata = getattr(response, "response_metadata", None) or {}
+    normalized_turn = response_metadata.get("normalized_turn") or {}
+    analyzer_observation = response_metadata.get("analyzer_observation") or {}
+    selected_action = getattr(response, "selected_action", None) or {}
+    product_context = normalized_turn.get("product_context") or {}
+    return {
+        "run_id": run_id,
+        "lead_id": getattr(response, "lead_id", None),
+        "message_ids": input_json.get("message_ids") or [],
+        "batch_count": input_json.get("batch_count"),
+        "analysis": {
+            "primary_intent": analysis.get("primary_intent"),
+            "secondary_intents": analysis.get("secondary_intents") or [],
+            "topics": analysis.get("topics") or [],
+            "has_objection": analysis.get("has_objection"),
+            "objection_type": analysis.get("objection_type"),
+            "objection_strength": analysis.get("objection_strength"),
+            "objection_relation": analysis.get("objection_relation"),
+            "skeptical_tone": analysis.get("skeptical_tone"),
+            "buying_signal": analysis.get("buying_signal"),
+            "explicit_start_intent": analysis.get("explicit_start_intent"),
+            "is_post_purchase": analysis.get("is_post_purchase"),
+            "references_prior_message": analysis.get("references_prior_message"),
+            "confidence": analysis.get("confidence") or {},
+        },
+        "analyzer_observation": {
+            "objection_candidate": analyzer_observation.get("objection_candidate"),
+            "requested_product": analyzer_observation.get("requested_product"),
+            "purchase_readiness": analyzer_observation.get("purchase_readiness"),
+            "observed_business_problems": analyzer_observation.get("observed_business_problems")
+            or [],
+            "requested_agent_capabilities": analyzer_observation.get(
+                "requested_agent_capabilities"
+            )
+            or [],
+            "requested_agent_actions": analyzer_observation.get("requested_agent_actions")
+            or [],
+        },
+        "normalized_turn": {
+            "normalized_objection": normalized_turn.get("normalized_objection"),
+            "requested_product": normalized_turn.get("requested_product"),
+            "requirement_class": normalized_turn.get("requirement_class"),
+            "action_requirement": normalized_turn.get("action_requirement"),
+            "active_product_context": normalized_turn.get("active_product_context")
+            or product_context.get("active_product_context"),
+            "selected_product": normalized_turn.get("selected_product")
+            or product_context.get("selected_product"),
+            "confirmed_product": normalized_turn.get("confirmed_product")
+            or product_context.get("confirmed_product"),
+            "scope_flags": normalized_turn.get("scope_flags") or [],
+        },
+        "selected_action": {
+            "macro_action": selected_action.get("macro_action")
+            or getattr(response, "action", None),
+            "micro_action": selected_action.get("micro_action"),
+            "reason_code": selected_action.get("reason_code"),
+            "target_stage": selected_action.get("target_stage"),
+            "cta_type": selected_action.get("cta_type"),
+            "next_question_key": selected_action.get("next_question_key"),
+            "objection_flow_step": selected_action.get("objection_flow_step"),
+            "objection_overlay": selected_action.get("objection_overlay"),
+        },
+    }
+
+
+def _model_dump(value: Any) -> Dict[str, Any]:
+    if value is None:
+        return {}
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if isinstance(value, dict):
+        return value
+    return {}

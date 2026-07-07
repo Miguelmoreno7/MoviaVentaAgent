@@ -11,6 +11,7 @@ from movia_sales_agent.whatsapp.queue import (
     QueuedWhatsAppMessage,
     WhatsAppWorkerManager,
     build_queue,
+    turn_diagnostics_payload,
 )
 
 
@@ -498,6 +499,73 @@ def test_build_queue_falls_back_when_redis_is_unreachable():
 
     assert isinstance(queue, InMemoryWhatsAppQueue)
     assert queue.durable is False
+
+
+def test_turn_diagnostics_payload_includes_analyzer_and_objection_fields():
+    response = SimpleNamespace(
+        lead_id="lead-1",
+        action="answer_and_advance",
+        analysis=SimpleNamespace(
+            model_dump=lambda: {
+                "primary_intent": "general_info",
+                "secondary_intents": [],
+                "topics": ["pricing"],
+                "has_objection": True,
+                "objection_type": "price_objection",
+                "objection_strength": "soft",
+                "objection_relation": "new",
+                "skeptical_tone": False,
+                "buying_signal": "low",
+                "explicit_start_intent": False,
+                "is_post_purchase": False,
+                "references_prior_message": False,
+                "confidence": {"objection": 0.91},
+            }
+        ),
+        selected_action={
+            "macro_action": "answer_and_advance",
+            "micro_action": "answer_price_then_explain_scope",
+            "reason_code": "NEW_SOFT_OBJECTION",
+            "target_stage": "educating",
+            "objection_overlay": {
+                "type": "price_objection",
+                "strength": "soft",
+                "blocking_close": False,
+            },
+        },
+        response_metadata={
+            "analyzer_observation": {
+                "objection_candidate": {
+                    "type": "price_objection",
+                    "strength": "soft",
+                    "evidence_span": "fuera de mi presupuesto",
+                }
+            },
+            "normalized_turn": {
+                "normalized_objection": {
+                    "type": "price_objection",
+                    "strength": "soft",
+                },
+                "requested_product": "none",
+                "requirement_class": "unknown",
+            },
+        },
+    )
+
+    payload = turn_diagnostics_payload(
+        run_id="run-1",
+        input_json={"message_ids": ["wamid.1"], "batch_count": 1},
+        response=response,
+    )
+
+    assert payload["run_id"] == "run-1"
+    assert payload["analysis"]["objection_type"] == "price_objection"
+    assert payload["analysis"]["objection_strength"] == "soft"
+    assert payload["analyzer_observation"]["objection_candidate"]["evidence_span"] == (
+        "fuera de mi presupuesto"
+    )
+    assert payload["selected_action"]["reason_code"] == "NEW_SOFT_OBJECTION"
+    assert payload["selected_action"]["objection_overlay"]["blocking_close"] is False
 
 
 def to_queued(message):
