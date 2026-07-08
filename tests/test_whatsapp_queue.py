@@ -11,6 +11,7 @@ from movia_sales_agent.whatsapp.queue import (
     QueuedWhatsAppMessage,
     WhatsAppWorkerManager,
     build_queue,
+    payload_enqueued_at,
     turn_diagnostics_payload,
 )
 
@@ -172,6 +173,34 @@ async def test_different_leads_can_run_concurrently():
 
     assert len(agent.starts) == 2
     assert abs(agent.starts[0][1] - agent.starts[1][1]) < 0.15
+
+
+@pytest.mark.asyncio
+async def test_worker_manager_respawns_dead_worker_tasks():
+    agent = FakeAgent()
+    client = FakeClient()
+    manager = WhatsAppWorkerManager(
+        settings=queue_settings(MOVIA_JOB_CONCURRENCY=2),
+        agent=agent,
+        client=client,
+        queue=InMemoryWhatsAppQueue(),
+    )
+    await manager.start()
+    try:
+        assert manager.worker_status()["alive_task_count"] == 2
+        for task in list(manager._tasks):
+            task.cancel()
+        await asyncio.gather(*manager._tasks, return_exceptions=True)
+
+        assert manager.worker_status()["alive_task_count"] == 0
+        await manager.ensure_running()
+
+        status = manager.worker_status()
+        assert status["desired_concurrency"] == 2
+        assert status["alive_task_count"] == 2
+        assert status["running"] is True
+    finally:
+        await manager.stop()
 
 
 @pytest.mark.asyncio
@@ -499,6 +528,12 @@ def test_build_queue_falls_back_when_redis_is_unreachable():
 
     assert isinstance(queue, InMemoryWhatsAppQueue)
     assert queue.durable is False
+
+
+def test_payload_enqueued_at_falls_back_to_whatsapp_timestamp_for_legacy_rows():
+    assert payload_enqueued_at({"timestamp": "1783428774"}, default=99.0) == 1783428774.0
+    assert payload_enqueued_at({"enqueued_at": 123.0, "timestamp": "1783428774"}, default=99.0) == 123.0
+    assert payload_enqueued_at({"timestamp": "bad"}, default=99.0) == 99.0
 
 
 def test_turn_diagnostics_payload_includes_analyzer_and_objection_fields():

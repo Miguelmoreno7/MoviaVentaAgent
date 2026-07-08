@@ -182,6 +182,7 @@ def health(
         "redis_configured": bool(settings.redis_url),
         "queue_enabled": settings.webhook_queue_enabled,
         "queue_durable": bool(manager and manager.durable),
+        "queue_worker_status": manager.worker_status() if manager else None,
         "job_concurrency": settings.job_concurrency,
         "lead_batch_window_seconds": settings.lead_batch_window_seconds,
         "followup_enabled": settings.followup_enabled,
@@ -248,6 +249,8 @@ async def receive_whatsapp(
             manager = WhatsAppWorkerManager(settings=settings, agent=agent, client=client)
             request.app.state.whatsapp_worker_manager = manager
             await manager.start()
+        else:
+            await manager.ensure_running()
         for inbound in inbound_messages:
             enqueue_status = await manager.enqueue(inbound)
             read_result = mark_inbound_read(client, inbound.message_id)

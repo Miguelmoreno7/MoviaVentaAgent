@@ -239,7 +239,7 @@ class RedisWhatsAppQueue:
                 if not first_row:
                     continue
                 payload = json.loads(first_row)
-                enqueued_at = float(payload.get("enqueued_at") or now)
+                enqueued_at = payload_enqueued_at(payload, default=now)
                 if now - enqueued_at < self._stale_buffer_after_seconds:
                     continue
                 self._redis.set(
@@ -292,7 +292,7 @@ class RedisWhatsAppQueue:
                     referral=payload.get("referral") or {},
                     timestamp=payload.get("timestamp"),
                     interactive_button_id=payload.get("interactive_button_id"),
-                    enqueued_at=float(payload.get("enqueued_at") or time.time()),
+                    enqueued_at=payload_enqueued_at(payload, default=time.time()),
                 )
             )
         batch, remaining = split_batch_by_window(
@@ -397,13 +397,11 @@ class WhatsAppWorkerManager:
 
     async def start(self) -> None:
         if self._tasks:
+            await self.ensure_running()
             return
         self._stopping.clear()
-        concurrency = max(1, int(self.settings.job_concurrency or 1))
-        self._tasks = [
-            asyncio.create_task(self._worker_loop(index), name=f"movia-whatsapp-worker-{index}")
-            for index in range(concurrency)
-        ]
+        self._tasks = []
+        self._spawn_missing_worker_tasks()
 
     async def stop(self) -> None:
         self._stopping.set()
@@ -412,7 +410,56 @@ class WhatsAppWorkerManager:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks = []
 
+    async def ensure_running(self) -> None:
+        if self._stopping.is_set():
+            return
+        alive_tasks = []
+        for task in self._tasks:
+            if task.done():
+                try:
+                    exc = task.exception()
+                except asyncio.CancelledError:
+                    exc = None
+                if exc:
+                    logger.error("WhatsApp worker task exited unexpectedly: %s", exc)
+            else:
+                alive_tasks.append(task)
+        self._tasks = alive_tasks
+        self._spawn_missing_worker_tasks()
+
+    def worker_status(self) -> Dict[str, Any]:
+        desired = self._desired_concurrency()
+        alive = sum(1 for task in self._tasks if not task.done())
+        done = sum(1 for task in self._tasks if task.done())
+        return {
+            "desired_concurrency": desired,
+            "task_count": len(self._tasks),
+            "alive_task_count": alive,
+            "done_task_count": done,
+            "running": alive >= desired,
+            "durable": self.durable,
+        }
+
+    def _desired_concurrency(self) -> int:
+        return max(1, int(self.settings.job_concurrency or 1))
+
+    def _spawn_missing_worker_tasks(self) -> None:
+        desired = self._desired_concurrency()
+        missing = max(0, desired - len(self._tasks))
+        if missing <= 0:
+            return
+        start_index = len(self._tasks)
+        for offset in range(missing):
+            index = start_index + offset
+            self._tasks.append(
+                asyncio.create_task(
+                    self._worker_loop(index),
+                    name=f"movia-whatsapp-worker-{index}",
+                )
+            )
+
     async def enqueue(self, message: WhatsAppMessage) -> str:
+        await self.ensure_running()
         queued = QueuedWhatsAppMessage(
             message_id=message.message_id,
             from_number=message.from_number,
@@ -888,6 +935,18 @@ def split_batch_by_window(
     batch = [message for message in ordered if message.enqueued_at <= cutoff]
     remaining = [message for message in ordered if message.enqueued_at > cutoff]
     return batch, remaining
+
+
+def payload_enqueued_at(payload: Dict[str, Any], *, default: float) -> float:
+    for key in ("enqueued_at", "timestamp"):
+        value = payload.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return default
 
 
 def should_send_entry_intent_buttons(response: Any) -> bool:
