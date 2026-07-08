@@ -1243,6 +1243,7 @@ def _effective_known_slots(
     if (
         action_requirement != ActionRequirement.UNKNOWN.value
         or str(requirement_class or "unknown") != "unknown"
+        or _active_product_context(normalized_turn) == ProductFit.MOVIA_HIBRIDO.value
     ):
         known.add("action_requirement")
     return known
@@ -1272,10 +1273,26 @@ def _known_action_requirement(state: PlannerState) -> bool:
         return True
     if str(state.requirement_class or "unknown") != "unknown":
         return True
+    if state.known_product_fit == ProductFit.MOVIA_HIBRIDO.value:
+        return True
+    if _active_product_context(state.normalized_turn or {}) == ProductFit.MOVIA_HIBRIDO.value:
+        return True
     memory_profile = ensure_requirement_profile(
         {"requirement_profile": (state.structured_memory or {}).get("requirement_profile") or {}}
     )
     return str(memory_profile.get("requirement_class") or "unknown") != "unknown"
+
+
+def _active_product_context(normalized_turn: Dict[str, Any]) -> Optional[str]:
+    product_context = dict(normalized_turn.get("product_context") or {})
+    product = str(
+        normalized_turn.get("active_product_context")
+        or product_context.get("active_product_context")
+        or ""
+    )
+    if product in {ProductFit.MOVIA_CAPTURA.value, ProductFit.MOVIA_HIBRIDO.value}:
+        return product
+    return None
 
 
 def _post_purchase_handoff_allowed(state: PlannerState) -> bool:

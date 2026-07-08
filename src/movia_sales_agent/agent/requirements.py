@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
 from movia_sales_agent.analyzer.contract_v3 import (
     INFORMATIONAL_AGENT_CAPABILITIES,
     SALES_AGENT_CAPABILITIES,
     RequirementUpdateIntent,
+    RequestedAgentAction,
 )
 from movia_sales_agent.contracts.commercial import ActionRequirement, ProductFit
 
@@ -78,6 +79,12 @@ def current_turn_requirement_delta(
         analyzer_observation.get("requested_agent_actions"),
         normalized_turn.get("requested_agent_actions") or [],
         strength_key="requirement_strength",
+    )
+    actions = _dedupe_entries(
+        [
+            *actions,
+            *_contextual_action_entries(normalized_turn.get("contextual_requirement_actions")),
+        ]
     )
     informational = [
         entry for entry in capabilities if entry["type"] in INFORMATIONAL_AGENT_CAPABILITIES
@@ -286,6 +293,32 @@ def _entries_from_observation(
                 "type": item_type,
                 "evidence_span": item.get("evidence_span"),
                 "strength": item.get(strength_key) or "explicit",
+                "active": True,
+            }
+        )
+    return _dedupe_entries(result)
+
+
+def _contextual_action_entries(raw_entries: Any) -> List[Dict[str, Any]]:
+    result: List[Dict[str, Any]] = []
+    valid_actions = set(RequestedAgentAction.values()) - {
+        RequestedAgentAction.UNKNOWN_EXTERNAL_ACTION.value
+    }
+    for item in raw_entries or []:
+        if not isinstance(item, dict):
+            continue
+        item_type = str(item.get("type") or "")
+        if item_type not in valid_actions:
+            continue
+        evidence_span = str(item.get("evidence_span") or "").strip()
+        if not evidence_span:
+            continue
+        result.append(
+            {
+                "type": item_type,
+                "evidence_span": evidence_span,
+                "strength": item.get("strength") or "explicit",
+                "source": item.get("source") or "contextual_requirement_frame",
                 "active": True,
             }
         )

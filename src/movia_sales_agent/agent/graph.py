@@ -11,6 +11,7 @@ from movia_sales_agent.analyzer.normalizer import (
 )
 from movia_sales_agent.analyzer.shadow_parser import ShadowSignalParser
 from movia_sales_agent.agent.commercial_state import resolve_product_context
+from movia_sales_agent.agent.contextual_reply import apply_contextual_reply_resolution
 from movia_sales_agent.agent.fulfillment import build_response_fulfillment_policy
 from movia_sales_agent.agent.memory import (
     build_structured_memory,
@@ -187,9 +188,15 @@ class MoviaSalesAgent:
             normalized,
             message=state["message"],
         )
+        analysis, normalized_turn = apply_contextual_reply_resolution(
+            analysis=analysis,
+            normalized_turn=normalized.model_dump(),
+            message=state["message"],
+            recent_messages=state.get("recent_messages", []),
+        )
         return {
             "analysis": analysis,
-            "normalized_turn": normalized.model_dump(),
+            "normalized_turn": normalized_turn,
         }
 
     def update_lead_state(self, state: AgentState) -> Dict[str, Any]:
