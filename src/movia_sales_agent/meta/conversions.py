@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -47,7 +48,11 @@ class MetaConversionsClient:
         }
         with httpx.Client(timeout=self.timeout_seconds) as client:
             response = client.post(url, headers=headers, json={"data": [payload]})
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                body = response.text[:1000]
+                raise MetaConversionsAPIError(f"{exc} response_body={body}") from exc
             return response.json()
 
 
@@ -239,16 +244,21 @@ def build_conversion_event(
 ) -> MetaConversionEvent:
     lead_id = str(getattr(response, "lead_id", "") or "unknown")
     event_id = deterministic_event_id(lead_id, event_name)
+    lead_state = _as_dict(getattr(response, "lead_state", {}))
+    user_data = {
+        "ctwa_clid": ctwa_clid,
+        "whatsapp_business_account_id": settings.meta_whatsapp_business_account_id,
+    }
+    phone_hash = hashed_phone_from_lead_state(lead_state)
+    if phone_hash:
+        user_data["ph"] = [phone_hash]
     payload = {
         "event_name": event_name,
         "event_time": int(time.time()),
         "event_id": event_id,
         "action_source": "business_messaging",
         "messaging_channel": "whatsapp",
-        "user_data": {
-            "ctwa_clid": ctwa_clid,
-            "whatsapp_business_account_id": settings.meta_whatsapp_business_account_id,
-        },
+        "user_data": user_data,
         "custom_data": compact_custom_data(response),
     }
     return MetaConversionEvent(event_name=event_name, event_id=event_id, payload=payload)
@@ -263,14 +273,30 @@ def compact_custom_data(response: Any) -> Dict[str, Any]:
     action = _as_dict(getattr(response, "selected_action", {}))
     analysis = _as_dict(getattr(response, "analysis", {}))
     lead_state = _as_dict(getattr(response, "lead_state", {}))
-    return {
+    return prune_empty_values({
         "lead_id": getattr(response, "lead_id", None),
         "macro_action": action.get("macro_action") or getattr(response, "action", None),
         "micro_action": action.get("micro_action"),
         "cta_type": action.get("cta_type"),
         "target_stage": action.get("target_stage") or lead_state.get("current_stage"),
         "buying_signal": analysis.get("buying_signal"),
-    }
+    })
+
+
+def hashed_phone_from_lead_state(lead_state: Dict[str, Any]) -> Optional[str]:
+    phone = str(lead_state.get("external_user_id") or "")
+    digits = re.sub(r"\D+", "", phone)
+    if not digits:
+        return None
+    return hashlib.sha256(digits.encode("utf-8")).hexdigest()
+
+
+def prune_empty_values(payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: value for key, value in payload.items() if value not in (None, "", [], {})}
+
+
+class MetaConversionsAPIError(RuntimeError):
+    pass
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:

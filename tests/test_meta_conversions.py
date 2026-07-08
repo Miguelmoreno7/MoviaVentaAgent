@@ -6,6 +6,7 @@ from movia_sales_agent.meta.conversions import (
     MetaConversionsService,
     applicable_event_names,
     build_conversion_events,
+    hashed_phone_from_lead_state,
 )
 from movia_sales_agent.meta.cli import create_dataset
 from movia_sales_agent.whatsapp.client import WhatsAppClient
@@ -140,7 +141,7 @@ def test_event_policy_uses_existing_runtime_signals_for_funnel_events():
 
 def test_build_conversion_event_payload_contains_business_messaging_fields():
     events = build_conversion_events(
-        fake_response(),
+        fake_response(lead_state={"current_stage": "educating", "external_user_id": "5218180000000"}),
         settings=meta_settings(),
         ctwa_clid="ctwa-123",
     )
@@ -151,6 +152,11 @@ def test_build_conversion_event_payload_contains_business_messaging_fields():
     assert event.payload["messaging_channel"] == "whatsapp"
     assert event.payload["user_data"]["ctwa_clid"] == "ctwa-123"
     assert event.payload["user_data"]["whatsapp_business_account_id"] == "waba-id"
+    assert event.payload["user_data"]["ph"] == [
+        hashed_phone_from_lead_state({"external_user_id": "5218180000000"})
+    ]
+    assert "buying_signal" in event.payload["custom_data"]
+    assert None not in event.payload["custom_data"].values()
 
 
 def test_offline_repository_stores_attribution_once_and_dedupes_events():
