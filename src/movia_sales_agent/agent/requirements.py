@@ -230,8 +230,10 @@ def active_external_action_count(profile: Dict[str, Any]) -> Optional[int]:
     declared = profile.get("declared_external_action_count") or {}
     if declared.get("active") and isinstance(declared.get("value"), int):
         return int(declared["value"])
-    count = len(_active_types(profile.get("external_actions")))
-    return count or None
+    # A list of action examples establishes external-action fit, but does not
+    # establish that every named action is a committed paid scope.  Only a
+    # literal declared count can move Híbrido past its two-action limit.
+    return None
 
 
 def derive_scope_flags(profile: Dict[str, Any], requested_product: Optional[str] = None) -> List[str]:

@@ -509,16 +509,16 @@ def test_planner_missing_slots_respect_requirement_profile_source_of_truth():
     assert plan.next_question_key != "action_requirement"
 
 
-def test_phase3_captura_is_not_recommended_for_external_actions():
+def test_phase3_captura_is_narrowed_to_hibrido_for_external_actions():
     agent = MoviaSalesAgent(offline_settings())
     result = agent.invoke(
         "Quiero MovIA Captura para cotizar y registrar pedidos en mi sistema.",
         lead_external_id="phase3-captura-external-actions",
     )
 
-    assert result.action == MacroAction.HANDOFF_TO_MIGUEL.value
-    assert result.selected_action["micro_action"] == MicroAction.REDIRECT_CUSTOM_SCOPE.value
-    assert result.selected_action["reason_code"] == PlannerReasonCode.CUSTOM_SCOPE_REVIEW.value
+    assert result.action == MacroAction.NARROW_SOLUTION.value
+    assert result.selected_action["micro_action"] == MicroAction.DIFFERENTIATE_CAPTURA_VS_HIBRIDO.value
+    assert result.selected_action["reason_code"] == PlannerReasonCode.EXTERNAL_ACTIONS_HIBRIDO_FIT.value
     assert "te conviene más MovIA Captura" not in result.response
 
 

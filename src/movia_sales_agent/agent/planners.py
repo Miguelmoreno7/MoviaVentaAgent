@@ -1063,7 +1063,7 @@ def _recommendation_plan(state: PlannerState) -> Optional[SalesPlan]:
             MacroAction.RECOMMEND_SOLUTION,
             MicroAction.RECOMMEND_MOVIA_CAPTURA,
             "Recomendar Captura para responder, capturar y filtrar leads.",
-            CTAType.SOFT_CLOSE,
+            CTAType.ASK_PERMISSION_TO_SEND_LINK,
             SalesStage.SOLUTION_RECOMMENDED,
             PlannerReasonCode.ANSWERS_ONLY_CAPTURA_FIT,
         )
@@ -1072,7 +1072,7 @@ def _recommendation_plan(state: PlannerState) -> Optional[SalesPlan]:
             MacroAction.RECOMMEND_SOLUTION,
             MicroAction.RECOMMEND_MOVIA_HIBRIDO,
             "Recomendar Híbrido cuando se requieren acciones externas simples.",
-            CTAType.SOFT_CLOSE,
+            CTAType.ASK_PERMISSION_TO_SEND_LINK,
             SalesStage.SOLUTION_RECOMMENDED,
             PlannerReasonCode.EXTERNAL_ACTIONS_HIBRIDO_FIT,
         )

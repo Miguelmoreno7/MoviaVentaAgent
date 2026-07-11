@@ -32,6 +32,10 @@ ACTION_TYPE_CUES = [
     (RequestedAgentAction.WRITE_EXTERNAL_SYSTEM.value, ["registrar", "registre", "guardar", "base de datos", "sistema", "crm", "panel"]),
 ]
 
+# The rule-based adapter remains for inspection only.  Reply-frame resolution
+# is the sole active contextual semantic path.
+CONTEXTUAL_REPLY_MUTATIONS_ENABLED = False
+
 
 def apply_contextual_reply_resolution(
     *,
@@ -47,6 +51,12 @@ def apply_contextual_reply_resolution(
     """
     normalized = dict(normalized_turn or {})
     resolved_analysis = analysis.model_copy(deep=True)
+    if not CONTEXTUAL_REPLY_MUTATIONS_ENABLED:
+        normalized["contextual_reply_resolution"] = {
+            "applied": False,
+            "mode": "disabled_in_favor_of_reply_frame_resolver",
+        }
+        return resolved_analysis, normalized
     previous_assistant = _last_assistant_message(recent_messages)
     previous_text = _message_content(previous_assistant)
     current_text = _normalize(message)

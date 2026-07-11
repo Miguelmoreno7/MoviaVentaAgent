@@ -180,6 +180,8 @@ class AgentState(TypedDict, total=False):
     conversation_memory_evidence: List[Dict[str, Any]]
     shadow_parser: Dict[str, Any]
     analyzer_observation: Dict[str, Any]
+    reply_frame: Dict[str, Any]
+    reply_frame_resolution: Dict[str, Any]
     normalized_turn: Dict[str, Any]
     purchase_status: Dict[str, Any]
     analysis: TurnAnalysis

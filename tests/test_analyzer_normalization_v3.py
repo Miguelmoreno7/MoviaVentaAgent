@@ -5,7 +5,6 @@ from movia_sales_agent.analyzer.contract_v3 import (
     AnalyzerExtractedFacts,
     AnalyzerReferenceType,
     AnalyzerTurnObservation,
-    BusinessProblemObservation,
     ObjectionCandidateObservation,
     PriorReferenceObservation,
     PurchaseReadinessObservation,
@@ -105,7 +104,7 @@ def test_current_pricing_question_does_not_become_provide_prices():
     assert normalized.action_requirement == ActionRequirement.UNKNOWN.value
 
 
-def test_current_pricing_question_rejects_erroneous_future_capability():
+def test_contract_valid_capability_passes_through_normalizer_without_cue_reclassification():
     message = "¿Cuánto cuesta?"
     observation = AnalyzerTurnObservation(
         primary_intent=Intent.PRICING_QUESTION,
@@ -116,12 +115,8 @@ def test_current_pricing_question_rejects_erroneous_future_capability():
 
     normalized = normalize_analyzer_turn(observation, message=message, shadow_parser={})
 
-    assert "provide_prices" not in normalized.requested_agent_capabilities
-    assert normalized.action_requirement == ActionRequirement.UNKNOWN.value
-    assert any(
-        issue.contradiction_code == "invalid_requested_capability_semantics"
-        for issue in normalized.contradictions
-    )
+    assert "provide_prices" in normalized.requested_agent_capabilities
+    assert normalized.action_requirement == ActionRequirement.ANSWERS_ONLY.value
 
 
 def test_future_agent_pricing_request_becomes_provide_prices():
@@ -147,7 +142,7 @@ def test_explicit_future_agent_scheduling_request_becomes_schedule_appointment()
     assert normalized.action_requirement == ActionRequirement.EXTERNAL_ACTIONS_REQUIRED.value
 
 
-def test_current_salesperson_request_cannot_be_future_agent_action():
+def test_contract_valid_action_passes_through_normalizer_without_cue_reclassification():
     message = "Ok, si eso queda claro, mándame el link para iniciar."
     observation = AnalyzerTurnObservation(
         primary_intent=Intent.EXPLICIT_START_REQUEST,
@@ -165,12 +160,8 @@ def test_current_salesperson_request_cannot_be_future_agent_action():
 
     normalized = normalize_analyzer_turn(observation, message=message, shadow_parser={})
 
-    assert normalized.requested_agent_actions == []
-    assert normalized.action_requirement == ActionRequirement.UNKNOWN.value
-    assert any(
-        issue.contradiction_code == "invalid_requested_action_semantics"
-        for issue in normalized.contradictions
-    )
+    assert normalized.requested_agent_actions == ["schedule_appointment"]
+    assert normalized.action_requirement == ActionRequirement.EXTERNAL_ACTIONS_REQUIRED.value
 
 
 def test_sales_closing_requirement_becomes_close_sale_without_compatibility_leak():
@@ -415,6 +406,6 @@ def test_graph_exposes_normalized_turn_and_uses_it_for_memory():
     normalized = result.response_metadata["normalized_turn"]
     assert normalized["normalized_turn_contract_version"] == NORMALIZED_TURN_CONTRACT_VERSION
     assert normalized["action_requirement"] == ActionRequirement.EXTERNAL_ACTIONS_REQUIRED.value
-    assert normalized["recommended_product"] == ProductFit.CUSTOM_REVIEW.value
-    assert result.analysis.lead_updates.profile_data["known_product_fit"] == ProductFit.CUSTOM_REVIEW.value
+    assert normalized["recommended_product"] == ProductFit.MOVIA_HIBRIDO.value
+    assert result.analysis.lead_updates.profile_data["known_product_fit"] == ProductFit.MOVIA_HIBRIDO.value
     assert result.response_metadata["parser_llm_telemetry"]["requested_actions"]["agreement"]

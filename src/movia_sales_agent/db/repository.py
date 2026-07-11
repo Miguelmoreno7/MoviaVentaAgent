@@ -440,7 +440,7 @@ class MoviaRepository:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                select role, content, created_at
+                select role, content, analysis, retrieval_metadata, created_at
                 from public.movia_conversation_messages
                 where lead_id = %s
                 order by created_at desc

@@ -109,45 +109,19 @@ def normalize_analyzer_turn(
     contradictions: List[NormalizationIssue] = []
     warnings: List[str] = []
 
-    valid_actions = [
-        action
-        for action in observation.requested_agent_actions
-        if _valid_future_agent_action(action, message)
-    ]
-    invalid_actions = [
-        action
-        for action in observation.requested_agent_actions
-        if not _valid_future_agent_action(action, message)
-    ]
-    for action in invalid_actions:
-        contradictions.append(
-            _issue(
-                "invalid_requested_action_semantics",
-                {"type": action.type, "evidence_span": action.evidence_span},
-                {"dropped": True},
-            )
-        )
-
-    valid_capabilities = [
-        capability
-        for capability in observation.requested_agent_capabilities
-        if _valid_future_agent_capability(capability, message)
-    ]
-    invalid_capabilities = [
-        capability
-        for capability in observation.requested_agent_capabilities
-        if not _valid_future_agent_capability(capability, message)
-    ]
-    if invalid_capabilities:
-        warnings.append("requested_agent_capabilities_without_valid_future_agent_semantics")
-        for capability in invalid_capabilities:
-            contradictions.append(
-                _issue(
-                    "invalid_requested_capability_semantics",
-                    {"type": capability.type, "evidence_span": capability.evidence_span},
-                    {"dropped": True},
-                )
-            )
+    # Contract V3.1 already validates enum values and literal current-message
+    # evidence.  The former Spanish cue filter is intentionally kept below for
+    # future review, but must not second-guess the analyzer's semantic output.
+    # valid_actions = [
+    #     action for action in observation.requested_agent_actions
+    #     if _valid_future_agent_action(action, message)
+    # ]
+    # valid_capabilities = [
+    #     capability for capability in observation.requested_agent_capabilities
+    #     if _valid_future_agent_capability(capability, message)
+    # ]
+    valid_actions = list(observation.requested_agent_actions)
+    valid_capabilities = list(observation.requested_agent_capabilities)
     informational_capabilities = [
         capability
         for capability in valid_capabilities
