@@ -2,13 +2,16 @@ from movia_sales_agent.agent.graph import MoviaSalesAgent
 from movia_sales_agent.analyzer.contract_v3 import (
     AgentActionObservation,
     AgentCapabilityObservation,
+    ActiveObjectionRelationObservation,
+    AnalyzerActiveObjectionRelation,
     AnalyzerExtractedFacts,
     AnalyzerReferenceType,
     AnalyzerTurnObservation,
     ObjectionCandidateObservation,
+    ProductReferenceObservation,
+    ProductReferenceRole,
     PriorReferenceObservation,
     PurchaseReadinessObservation,
-    RequestedProductObservation,
     legacy_analysis_to_observation,
 )
 from movia_sales_agent.analyzer.normalizer import (
@@ -22,7 +25,6 @@ from movia_sales_agent.contracts.commercial import (
     ActionRequirement,
     BuyingSignal,
     Intent,
-    ObjectionRelation,
     ObjectionStrength,
     ObjectionType,
     ProductFit,
@@ -108,6 +110,7 @@ def test_contract_valid_capability_passes_through_normalizer_without_cue_reclass
     message = "¿Cuánto cuesta?"
     observation = AnalyzerTurnObservation(
         primary_intent=Intent.PRICING_QUESTION,
+        requirement_update_intent="merge",
         requested_agent_capabilities=[
             AgentCapabilityObservation(type="provide_prices", evidence_span="Cuánto cuesta")
         ],
@@ -146,6 +149,7 @@ def test_contract_valid_action_passes_through_normalizer_without_cue_reclassific
     message = "Ok, si eso queda claro, mándame el link para iniciar."
     observation = AnalyzerTurnObservation(
         primary_intent=Intent.EXPLICIT_START_REQUEST,
+        requirement_update_intent="merge",
         requested_agent_actions=[
             AgentActionObservation(
                 type="schedule_appointment",
@@ -219,10 +223,13 @@ def test_direct_price_question_is_not_prior_reference_without_reference_cue():
     message = "Cuanto cuesta Captura?"
     observation = AnalyzerTurnObservation(
         primary_intent=Intent.PRICING_QUESTION,
-        requested_product=RequestedProductObservation(
-            product="movia_captura",
-            evidence_span="Captura",
-        ),
+        product_references=[
+            ProductReferenceObservation(
+                product="movia_captura",
+                evidence_span="Captura",
+                reference_role=ProductReferenceRole.QUESTION_SUBJECT,
+            )
+        ],
         prior_reference=PriorReferenceObservation(
             type=AnalyzerReferenceType.TOPIC_REFERENCE,
             topic_hint="MovIA Captura product and pricing",
@@ -278,7 +285,6 @@ def test_invalid_objection_evidence_is_normalized_to_none():
         objection_candidate=ObjectionCandidateObservation(
             type=ObjectionType.PRICE_OBJECTION,
             strength=ObjectionStrength.HARD,
-            relation=ObjectionRelation.NEW,
             evidence_span="se me hace caro",
         ),
     )
@@ -319,11 +325,15 @@ def test_invalid_explicit_start_evidence_is_not_start_intent():
 def test_product_preference_mismatch_keeps_requested_recommended_selected_separate():
     observation = AnalyzerTurnObservation(
         primary_intent=Intent.PRODUCT_SCOPE_QUESTION,
+        requirement_update_intent="merge",
         extracted_facts=AnalyzerExtractedFacts(main_channel="whatsapp"),
-        requested_product=RequestedProductObservation(
-            product="movia_hibrido",
-            evidence_span="Híbrido",
-        ),
+        product_references=[
+            ProductReferenceObservation(
+                product="movia_hibrido",
+                evidence_span="Híbrido",
+                reference_role=ProductReferenceRole.PREFERRED,
+            )
+        ],
         requested_agent_capabilities=[
             AgentCapabilityObservation(
                 type="answer_customer_questions",
@@ -347,10 +357,13 @@ def test_product_preference_mismatch_keeps_requested_recommended_selected_separa
 def test_unavailable_requested_product_is_not_selected():
     observation = AnalyzerTurnObservation(
         primary_intent=Intent.PRODUCT_SCOPE_QUESTION,
-        requested_product=RequestedProductObservation(
-            product="movia_ventas",
-            evidence_span="MovIA Ventas",
-        ),
+        product_references=[
+            ProductReferenceObservation(
+                product="movia_ventas",
+                evidence_span="MovIA Ventas",
+                reference_role=ProductReferenceRole.COMMITTED,
+            )
+        ],
     )
 
     normalized = normalize_analyzer_turn(
@@ -372,6 +385,108 @@ def test_product_reference_does_not_imply_selection():
 
     assert normalized.requested_product == "movia_captura"
     assert normalized.selected_product is None
+
+
+def test_comparison_products_have_no_singular_alias_and_do_not_select():
+    message = "¿Captura puede agendar o para eso necesito Híbrido?"
+    observation = AnalyzerTurnObservation(
+        primary_intent=Intent.COMPARISON_QUESTION,
+        product_references=[
+            ProductReferenceObservation(
+                product="movia_captura",
+                evidence_span="Captura",
+                reference_role=ProductReferenceRole.QUESTION_SUBJECT,
+            ),
+            ProductReferenceObservation(
+                product="movia_hibrido",
+                evidence_span="Híbrido",
+                reference_role=ProductReferenceRole.COMPARISON_ALTERNATIVE,
+            ),
+        ],
+    )
+
+    normalized = normalize_analyzer_turn(observation, message=message, shadow_parser={})
+
+    assert normalized.requested_product == "none"
+    assert normalized.selected_product is None
+    assert {item["product"] for item in normalized.product_references} == {
+        "movia_captura",
+        "movia_hibrido",
+    }
+
+
+def test_active_objection_relation_is_preserved_without_new_candidate():
+    message = "Bueno, con ese ahorro ya me hace sentido"
+    observation = AnalyzerTurnObservation(
+        primary_intent=Intent.GENERAL_INFO,
+        active_objection_relation=ActiveObjectionRelationObservation(
+            relation=AnalyzerActiveObjectionRelation.RESOLVED,
+            evidence_span="ya me hace sentido",
+        ),
+    )
+
+    normalized = normalize_analyzer_turn(
+        observation,
+        message=message,
+        lead_profile={
+            "active_objection": {
+                "active": True,
+                "type": "price_objection",
+                "strength": "hard",
+            }
+        },
+        shadow_parser={},
+    )
+
+    assert normalized.has_objection is False
+    assert normalized.objection_relation == "resolved"
+    assert normalized.normalized_objection["relation"] == "resolved"
+
+
+def test_active_objection_relation_without_active_objection_is_dropped():
+    message = "Bueno, ya me hace sentido"
+    observation = AnalyzerTurnObservation(
+        active_objection_relation=ActiveObjectionRelationObservation(
+            relation=AnalyzerActiveObjectionRelation.RESOLVED,
+            evidence_span="ya me hace sentido",
+        )
+    )
+
+    normalized = normalize_analyzer_turn(
+        observation,
+        message=message,
+        lead_profile={},
+        shadow_parser={},
+    )
+
+    assert normalized.objection_relation == "none"
+    assert any(
+        issue.contradiction_code == "active_objection_relation_without_valid_active_context"
+        for issue in normalized.contradictions
+    )
+
+
+def test_missing_relation_with_active_objection_defaults_to_unrelated():
+    normalized = normalize_analyzer_turn(
+        AnalyzerTurnObservation(primary_intent=Intent.PRODUCT_SCOPE_QUESTION),
+        message="¿Captura puede entender audios?",
+        lead_profile={
+            "active_objection": {
+                "active": True,
+                "type": "price_objection",
+                "strength": "hard",
+            }
+        },
+        shadow_parser={},
+    )
+
+    assert normalized.objection_relation == "unrelated"
+    assert normalized.normalized_objection["relation"] == "unrelated"
+    assert any(
+        issue.contradiction_code
+        == "missing_active_objection_relation_defaults_unrelated"
+        for issue in normalized.contradictions
+    )
 
 
 def test_parser_only_action_does_not_override_llm_observation():

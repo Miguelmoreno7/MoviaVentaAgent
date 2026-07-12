@@ -79,7 +79,7 @@ class RagService:
             usage = {
                 "operation": "embedding",
                 "model": self.openai_service.settings.openai_embedding_model,
-                "provider": "fallback",
+                "provider": "local_keyword",
                 "input_tokens": 0,
                 "output_tokens": 0,
                 "total_tokens": 0,

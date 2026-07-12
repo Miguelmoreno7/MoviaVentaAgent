@@ -204,6 +204,10 @@ class SalesPolicyPlanner:
         if exact_plan:
             return _finalize_plan(state, exact_plan)
 
+        contextual_continuation = _contextual_continuation_plan(state)
+        if contextual_continuation:
+            return _finalize_plan(state, contextual_continuation)
+
         unsupported_channel_plan = _unsupported_channel_plan(state)
         if unsupported_channel_plan:
             return _finalize_plan(state, unsupported_channel_plan)
@@ -229,6 +233,24 @@ class SalesPolicyPlanner:
             ))
 
         if Topic.COMPETITOR_COMPARISON.value in analysis.topics:
+            product_references = list((state.normalized_turn or {}).get("product_references") or [])
+            referenced_products = {
+                str(reference.get("product"))
+                for reference in product_references
+                if isinstance(reference, dict) and reference.get("product")
+            }
+            missing_key = _missing_core_discovery_key(state)
+            if len(referenced_products) > 1:
+                return _finalize_plan(state, make_plan(
+                    MacroAction.NARROW_SOLUTION,
+                    MicroAction.DIFFERENTIATE_CAPTURA_VS_HIBRIDO,
+                    "Comparar los productos MovIA mencionados sin convertir una referencia en selección.",
+                    CTAType.DISCOVERY_QUESTION if missing_key else CTAType.SOFT_QUESTION,
+                    SalesStage.COMPARING,
+                    PlannerReasonCode.COMPARISON_REQUESTED,
+                    next_question=_question_for_key(missing_key),
+                    next_question_key=missing_key,
+                ))
             return _finalize_plan(state, make_plan(
                 MacroAction.COMPARE_ALTERNATIVE,
                 _comparison_microaction(state),
@@ -236,8 +258,8 @@ class SalesPolicyPlanner:
                 CTAType.DISCOVERY_QUESTION,
                 SalesStage.COMPARING,
                 PlannerReasonCode.COMPARISON_REQUESTED,
-                next_question="¿Buscas solo responder preguntas o también necesitas acciones como agendar o registrar datos?",
-                next_question_key="action_requirement",
+                next_question=_question_for_key(missing_key),
+                next_question_key=missing_key,
             ))
 
         if _is_unknown_recovery(state):
@@ -923,8 +945,44 @@ def _is_unknown_recovery(state: PlannerState) -> bool:
     analysis = state.analysis
     if analysis.skeptical_tone:
         return False
+    if (
+        state.requirement_class not in {None, "", "unknown"}
+        or state.action_requirement != ActionRequirement.UNKNOWN.value
+        or state.known_product_fit
+        in {ProductFit.MOVIA_CAPTURA.value, ProductFit.MOVIA_HIBRIDO.value}
+        or (state.normalized_turn or {}).get("contextual_reply_act")
+        in {"accept", "decline", "provide_answer", "ask_followup"}
+    ):
+        return False
     return analysis.primary_intent == Intent.UNKNOWN.value or (
         Topic.UNKNOWN.value in analysis.topics and len(analysis.topics) == 1
+    )
+
+
+def _contextual_continuation_plan(state: PlannerState) -> Optional[SalesPlan]:
+    normalized = state.normalized_turn or {}
+    frame = dict(normalized.get("contextual_reply_frame") or {})
+    reply_act = str(normalized.get("contextual_reply_act") or "")
+    if reply_act not in {"accept", "ask_followup"}:
+        return None
+    if frame.get("next_question_key") not in {"explain_more", "explain_or_price"}:
+        return None
+    target_product = frame.get("target_product")
+    if target_product == ProductFit.MOVIA_HIBRIDO.value:
+        micro_action = MicroAction.RECOMMEND_MOVIA_HIBRIDO
+        reason_code = PlannerReasonCode.EXTERNAL_ACTIONS_HIBRIDO_FIT
+    elif target_product == ProductFit.MOVIA_CAPTURA.value:
+        micro_action = MicroAction.RECOMMEND_MOVIA_CAPTURA
+        reason_code = PlannerReasonCode.ANSWERS_ONLY_CAPTURA_FIT
+    else:
+        return None
+    return make_plan(
+        MacroAction.RECOMMEND_SOLUTION,
+        micro_action,
+        "Continuar la explicación solicitada en el contexto del producto ya presentado.",
+        CTAType.SOFT_QUESTION,
+        SalesStage.SOLUTION_RECOMMENDED,
+        reason_code,
     )
 
 
@@ -1533,10 +1591,19 @@ def _knowledge_needs(
     }
     if (
         capability_terms & set(normalized_turn.get("requested_agent_capabilities") or [])
+        or normalized_turn.get("product_references")
         or normalized_turn.get("requested_product") not in (None, "", "none")
         or _contains_any_text(text, ["audio", "audios", "imagen", "imagenes", "foto", "catalogo", "catalogo"])
     ):
         needs.append("product_capabilities")
+    if len(
+        {
+            str(reference.get("product"))
+            for reference in normalized_turn.get("product_references") or []
+            if isinstance(reference, dict) and reference.get("product")
+        }
+    ) > 1:
+        needs.append("product_comparison")
     if analysis.references_prior_message:
         needs.append("conversation_memory")
     if sales_plan.macro_action == MacroAction.HANDLE_OBJECTION.value or (

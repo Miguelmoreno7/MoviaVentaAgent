@@ -27,6 +27,11 @@ from movia_sales_agent.evaluation.adaptive_hybrid import (
     DEFAULT_ADAPTIVE_OUTPUT_ROOT,
     run_adaptive_hybrid_pilot,
 )
+from movia_sales_agent.evaluation.production_contract_regression import (
+    DEFAULT_PRODUCTION_CONTRACT_DATASET,
+    DEFAULT_PRODUCTION_CONTRACT_OUTPUT,
+    run_production_contract_regression,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -102,6 +107,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-fail-exit",
         action="store_true",
         help="Return exit code 0 even when the pilot fails.",
+    )
+
+    production_contract = subparsers.add_parser(
+        "production-contract-regression",
+        help="Run the frozen V3.2 production-derived contract regression in no-write mode.",
+    )
+    production_contract.add_argument(
+        "--dataset", type=Path, default=DEFAULT_PRODUCTION_CONTRACT_DATASET
+    )
+    production_contract.add_argument(
+        "--output-root", type=Path, default=DEFAULT_PRODUCTION_CONTRACT_OUTPUT
+    )
+    production_contract.add_argument(
+        "--no-fail-exit",
+        action="store_true",
+        help="Return exit code 0 even when the regression gates fail.",
     )
     return parser
 
@@ -191,6 +212,30 @@ def main(argv: Optional[List[str]] = None) -> int:
                     "conversations": str(output_dir / "conversations.md"),
                     "conversation_scores": str(output_dir / "conversation_scores.json"),
                     "cost_latency": str(output_dir / "cost_latency.json"),
+                },
+                indent=2,
+            )
+        )
+        if args.no_fail_exit:
+            return 0
+        return 0 if result["passed"] else 1
+
+    if args.command == "production-contract-regression":
+        result = run_production_contract_regression(
+            dataset_path=args.dataset,
+            output_root=args.output_root,
+            settings=get_settings(),
+        )
+        print(
+            json.dumps(
+                {
+                    "run_id": result["run_id"],
+                    "passed": result["passed"],
+                    "failure_count": result["failure_count"],
+                    "fallback_count": result["fallback_count"],
+                    "output_dir": result["output_dir"],
+                    "summary": str(Path(result["output_dir"]) / "summary.md"),
+                    "run_json": str(Path(result["output_dir"]) / "run.json"),
                 },
                 indent=2,
             )

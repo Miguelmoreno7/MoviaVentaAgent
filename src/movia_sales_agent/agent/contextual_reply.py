@@ -47,7 +47,7 @@ def apply_contextual_reply_resolution(
     """Resolve tiny replies against the immediately previous assistant question.
 
     This is a deterministic runtime adapter. It does not change analyzer output or
-    let older context compete with the V3.1 semantic fields.
+    let older context compete with the V3.2 semantic fields.
     """
     normalized = dict(normalized_turn or {})
     resolved_analysis = analysis.model_copy(deep=True)

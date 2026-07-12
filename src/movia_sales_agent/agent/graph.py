@@ -13,12 +13,14 @@ from movia_sales_agent.analyzer.shadow_parser import ShadowSignalParser
 from movia_sales_agent.agent.commercial_state import resolve_product_context
 from movia_sales_agent.agent.contextual_reply import apply_contextual_reply_resolution
 from movia_sales_agent.agent.reply_frame import (
+    REPLY_FRAME_ACTION_REQUIREMENT,
+    REPLY_FRAME_LINK_START_CONFIRMATION,
     latest_reply_frame,
-    merge_reply_frame_observation,
     reply_frame_for_sales_plan,
     resolve_reply_frame_with_usage,
 )
 from movia_sales_agent.agent.fulfillment import build_response_fulfillment_policy
+from movia_sales_agent.agent.interaction_context import build_analyzer_interaction_context
 from movia_sales_agent.agent.memory import (
     build_structured_memory,
     memory_updates_for_profile,
@@ -36,6 +38,7 @@ from movia_sales_agent.agent.requirements import (
     derive_scope_flags,
     ensure_requirement_profile,
     merge_requirement_profile,
+    resolve_requirement_delta_with_usage,
 )
 from movia_sales_agent.agent.rag_policy import build_rag_route
 from movia_sales_agent.agent.response import (
@@ -89,6 +92,7 @@ class MoviaSalesAgent:
         workflow.add_node("analyze_turn", self.analyze_turn)
         workflow.add_node("resolve_reply_frame", self.resolve_reply_frame)
         workflow.add_node("normalize_and_derive_turn", self.normalize_and_derive_turn)
+        workflow.add_node("resolve_requirement_delta", self.resolve_requirement_delta)
         workflow.add_node("update_lead_state", self.update_lead_state)
         workflow.add_node("resolve_purchase_status", self.resolve_purchase_status)
         workflow.add_node("sales_policy_planner", self.sales_policy_planner_node)
@@ -109,7 +113,8 @@ class MoviaSalesAgent:
         workflow.add_edge("parse_explicit_signals_shadow", "analyze_turn")
         workflow.add_edge("analyze_turn", "resolve_reply_frame")
         workflow.add_edge("resolve_reply_frame", "normalize_and_derive_turn")
-        workflow.add_edge("normalize_and_derive_turn", "update_lead_state")
+        workflow.add_edge("normalize_and_derive_turn", "resolve_requirement_delta")
+        workflow.add_edge("resolve_requirement_delta", "update_lead_state")
         workflow.add_edge("update_lead_state", "resolve_purchase_status")
         workflow.add_edge("resolve_purchase_status", "sales_policy_planner")
         workflow.add_edge("sales_policy_planner", "stage_transition")
@@ -167,6 +172,10 @@ class MoviaSalesAgent:
             "lead_id": lead_id,
             "lead_profile": lead,
             "recent_messages": recent_messages,
+            "interaction_context": build_analyzer_interaction_context(
+                lead_profile=lead,
+                recent_messages=recent_messages,
+            ),
         }
 
     def parse_explicit_signals_shadow(self, state: AgentState) -> Dict[str, Any]:
@@ -175,7 +184,9 @@ class MoviaSalesAgent:
 
     def analyze_turn(self, state: AgentState) -> Dict[str, Any]:
         analysis, usage, observation = self.openai_service.analyze_turn_v3_with_usage(
-            state["message"], state.get("recent_messages", [])
+            state["message"],
+            state.get("recent_messages", []),
+            interaction_context=state.get("interaction_context", {}),
         )
         return {
             "analysis": analysis,
@@ -187,10 +198,12 @@ class MoviaSalesAgent:
         frame = latest_reply_frame(state.get("recent_messages", []))
         if not frame:
             return {"reply_frame": {}, "reply_frame_resolution": {}}
+        observation = AnalyzerTurnObservation.model_validate(state["analyzer_observation"])
         resolution, usage = resolve_reply_frame_with_usage(
             self.openai_service,
             frame=frame,
             message=state["message"],
+            observation=observation,
         )
         if not resolution:
             return {
@@ -198,10 +211,7 @@ class MoviaSalesAgent:
                 "reply_frame_resolution": {"applied": False, "frame": frame},
                 "token_usage": merge_usage(state.get("token_usage", {}), usage),
             }
-        observation = AnalyzerTurnObservation.model_validate(state["analyzer_observation"])
-        merged = merge_reply_frame_observation(observation, resolution, state["message"])
         return {
-            "analyzer_observation": merged.model_dump(),
             "reply_frame": frame,
             "reply_frame_resolution": {
                 "applied": True,
@@ -225,32 +235,98 @@ class MoviaSalesAgent:
             message=state["message"],
         )
         reply_resolution = state.get("reply_frame_resolution", {}) or {}
-        if reply_resolution.get("start_or_link_confirmed"):
+        frame = state.get("reply_frame") or {}
+        reply_act = str(reply_resolution.get("reply_act") or "unclear")
+        frame_type = str(frame.get("type") or "")
+        normalized_data = normalized.model_dump()
+        normalized_data["contextual_reply_act"] = reply_act
+        normalized_data["contextual_reply_frame"] = frame
+        if frame_type == REPLY_FRAME_LINK_START_CONFIRMATION and reply_act == "accept":
             analysis.explicit_start_intent = True
             analysis.buying_signal = "explicit_start"
             analysis.confidence.start_intent = max(analysis.confidence.start_intent, 0.9)
-            normalized_data = normalized.model_dump()
             normalized_data["explicit_start_intent"] = True
-            frame_product = (state.get("reply_frame") or {}).get("product")
+            profile_data = dict((state.get("lead_profile") or {}).get("profile_data") or {})
+            frame_product = (
+                frame.get("target_product")
+                or frame.get("product")
+                or profile_data.get("known_product_fit")
+            )
             if frame_product in {"movia_captura", "movia_hibrido"}:
                 normalized_data["selected_product"] = frame_product
                 normalized_data["recommended_product"] = frame_product
-            normalized = type(normalized).model_validate(normalized_data)
-        if reply_resolution.get("action_requirement_selection") == "external_actions_required":
-            normalized_data = normalized.model_dump()
-            normalized_data["action_requirement"] = "external_actions_required"
-            normalized_data["recommended_product"] = "movia_hibrido"
-            normalized = type(normalized).model_validate(normalized_data)
+        elif frame_type == REPLY_FRAME_LINK_START_CONFIRMATION and reply_act == "decline":
+            analysis.explicit_start_intent = False
+            if analysis.buying_signal == "explicit_start":
+                analysis.buying_signal = "none"
+            normalized_data["explicit_start_intent"] = False
+        if frame_type == REPLY_FRAME_ACTION_REQUIREMENT and reply_act in {
+            "accept",
+            "provide_answer",
+        }:
+            actions = list(normalized_data.get("requested_agent_actions") or [])
+            capabilities = list(normalized_data.get("requested_agent_capabilities") or [])
+            if actions:
+                normalized_data["action_requirement"] = "external_actions_required"
+                normalized_data["recommended_product"] = "movia_hibrido"
+            elif capabilities:
+                normalized_data["action_requirement"] = "answers_only"
+                normalized_data["recommended_product"] = "movia_captura"
+            else:
+                normalized_data["action_requirement"] = "external_actions_required"
+                normalized_data["recommended_product"] = "movia_hibrido"
+                normalized_data["contextual_requirement_actions"] = [
+                    {
+                        "type": "unknown_external_action",
+                        "evidence_span": state["message"],
+                        "requirement_strength": "unambiguous_implicit",
+                        "source": "planner_reply_frame",
+                    }
+                ]
+        normalized = type(normalized).model_validate(
+            {
+                key: value
+                for key, value in normalized_data.items()
+                if key in type(normalized).model_fields
+            }
+        )
         analysis, normalized_turn = apply_contextual_reply_resolution(
             analysis=analysis,
             normalized_turn=normalized.model_dump(),
             message=state["message"],
             recent_messages=state.get("recent_messages", []),
         )
+        normalized_turn.update(
+            {
+                key: value
+                for key, value in normalized_data.items()
+                if key not in type(normalized).model_fields
+            }
+        )
         normalized_turn["reply_frame_resolution"] = reply_resolution
         return {
             "analysis": analysis,
             "normalized_turn": normalized_turn,
+        }
+
+    def resolve_requirement_delta(self, state: AgentState) -> Dict[str, Any]:
+        profile_data = dict((state.get("lead_profile") or {}).get("profile_data") or {})
+        existing_profile = ensure_requirement_profile(profile_data)
+        resolution, usage = resolve_requirement_delta_with_usage(
+            self.openai_service,
+            message=state["message"],
+            existing_profile=existing_profile,
+            analyzer_observation=state.get("analyzer_observation", {}),
+            candidate_hint=bool(
+                (state.get("shadow_parser") or {}).get("requested_action_candidates")
+                or (state.get("shadow_parser") or {}).get(
+                    "requested_capability_candidates"
+                )
+            ),
+        )
+        return {
+            "requirement_delta_resolution": resolution.model_dump() if resolution else {},
+            "token_usage": merge_usage(state.get("token_usage", {}), usage),
         }
 
     def update_lead_state(self, state: AgentState) -> Dict[str, Any]:
@@ -261,6 +337,7 @@ class MoviaSalesAgent:
             analyzer_observation=state.get("analyzer_observation", {}),
             message=state["message"],
             existing_profile=existing_requirement_profile,
+            semantic_resolution=state.get("requirement_delta_resolution", {}),
         )
         turn_number = int(existing_requirement_profile.get("last_updated_turn") or 0) + 1
         merged_requirement_profile = merge_requirement_profile(
@@ -278,10 +355,6 @@ class MoviaSalesAgent:
             merged_requirement_profile.get("requirement_class")
         )
         derived_product_fit = derive_product_fit(merged_requirement_profile)
-        reply_resolution = state.get("reply_frame_resolution", {}) or {}
-        if reply_resolution.get("action_requirement_selection") == "external_actions_required":
-            derived_action_requirement = "external_actions_required"
-            derived_product_fit = "movia_hibrido"
         product_context = resolve_product_context(
             profile_data=profile_data,
             normalized_turn=state.get("normalized_turn", {}),
@@ -565,7 +638,11 @@ class MoviaSalesAgent:
             state.get("lead_id"),
             "assistant",
             state["response"],
-            analysis={"reply_frame": reply_frame_for_sales_plan(state["sales_plan"])},
+            analysis={
+                "reply_frame": reply_frame_for_sales_plan(
+                    state["sales_plan"], state.get("normalized_turn", {})
+                )
+            },
             retrieval_metadata=self._stored_retrieval_metadata(state),
             token_usage=self._stored_token_usage(state),
         )
@@ -582,7 +659,11 @@ class MoviaSalesAgent:
             {
                 "role": "assistant",
                 "content": state["response"],
-                "analysis": {"reply_frame": reply_frame_for_sales_plan(state["sales_plan"])},
+                "analysis": {
+                    "reply_frame": reply_frame_for_sales_plan(
+                        state["sales_plan"], state.get("normalized_turn", {})
+                    )
+                },
             },
         )
         stage_transition = state["stage_transition"]

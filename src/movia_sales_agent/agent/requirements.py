@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import json
 import re
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from movia_sales_agent.analyzer.contract_v3 import (
     INFORMATIONAL_AGENT_CAPABILITIES,
     SALES_AGENT_CAPABILITIES,
     RequirementUpdateIntent,
     RequestedAgentAction,
+    RequestedAgentCapability,
+    evidence_span_in_message,
 )
 from movia_sales_agent.contracts.commercial import ActionRequirement, ProductFit
+from movia_sales_agent.services.openai_service import empty_usage, response_usage
 
 
 REQUIREMENT_PROFILE_VERSION = "1.0"
@@ -19,6 +25,144 @@ REQUIREMENT_CLASS_EXTERNAL_ACTIONS = "external_actions"
 REQUIREMENT_CLASS_SALES_PERSUASION = "sales_persuasion"
 REQUIREMENT_CLASS_MIXED_ADVANCED = "mixed_advanced"
 STANDARD_HIBRIDO_ACTION_LIMIT = 2
+
+
+class RequirementDeltaSemanticResolution(BaseModel):
+    """Private, conditional interpretation of changes to an existing profile."""
+
+    model_config = ConfigDict(use_enum_values=True, validate_default=True, extra="forbid")
+
+    operation: RequirementUpdateIntent = RequirementUpdateIntent.NO_CHANGE
+    added_agent_actions: List[RequestedAgentAction] = Field(default_factory=list)
+    added_agent_capabilities: List[RequestedAgentCapability] = Field(default_factory=list)
+    removed_agent_actions: List[RequestedAgentAction] = Field(default_factory=list)
+    removed_agent_capabilities: List[RequestedAgentCapability] = Field(default_factory=list)
+    evidence_span: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> "RequirementDeltaSemanticResolution":
+        if (
+            self.operation == RequirementUpdateIntent.NO_CHANGE.value
+            and not self.added_agent_actions
+            and not self.added_agent_capabilities
+            and not self.removed_agent_actions
+            and not self.removed_agent_capabilities
+        ):
+            if self.evidence_span:
+                raise ValueError("no-change delta cannot include evidence_span")
+            return self
+        if not (self.evidence_span or "").strip():
+            raise ValueError("requirement delta change requires evidence_span")
+        return self
+
+
+def resolve_requirement_delta_with_usage(
+    openai_service: Any,
+    *,
+    message: str,
+    existing_profile: Dict[str, Any],
+    analyzer_observation: Dict[str, Any],
+    candidate_hint: bool = False,
+) -> Tuple[Optional[RequirementDeltaSemanticResolution], Dict[str, Any]]:
+    profile = ensure_requirement_profile({"requirement_profile": existing_profile})
+    if not _should_resolve_semantic_delta(
+        profile, analyzer_observation, candidate_hint=candidate_hint
+    ):
+        return None, empty_usage(
+            "requirement_delta", openai_service.settings.analysis_model, "not_applicable"
+        )
+    if not getattr(openai_service, "enabled", False):
+        return None, empty_usage(
+            "requirement_delta", openai_service.settings.analysis_model, "disabled"
+        )
+
+    active_actions = _active_types(profile.get("external_actions"))
+    active_capabilities = [
+        *_active_types(profile.get("informational_capabilities")),
+        *_active_types(profile.get("sales_capabilities")),
+    ]
+    try:
+        response = openai_service.client.responses.create(
+            model=openai_service.settings.analysis_model,
+            temperature=0,
+            input=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Resuelve únicamente cómo current_message actualiza el perfil de requisitos activo. "
+                        "Usa no_change si no cambia requisitos, merge si agrega o corrige conservando lo no removido, "
+                        "y replace solo si sustituye explícitamente el alcance anterior. "
+                        "removed_agent_actions y removed_agent_capabilities solo pueden contener valores presentes en active_requirements. "
+                        "added_agent_actions y added_agent_capabilities contienen únicamente requisitos nuevos expresados literalmente en current_message, aunque main_analyzer los haya omitido. "
+                        "En la ontología, registrar información=write_external_system; create_order requiere mencionar pedido u orden. "
+                        "No interpretes 'sin dejar de X' ni 'además de X' como eliminación de X. "
+                        "Cada cambio requiere un evidence_span literal de current_message."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "current_message": message,
+                            "active_requirements": {
+                                "agent_actions": active_actions,
+                                "agent_capabilities": active_capabilities,
+                            },
+                            "main_analyzer": {
+                                "requirement_update_intent": analyzer_observation.get(
+                                    "requirement_update_intent"
+                                ),
+                                "requested_agent_actions": analyzer_observation.get(
+                                    "requested_agent_actions"
+                                )
+                                or [],
+                                "requested_agent_capabilities": analyzer_observation.get(
+                                    "requested_agent_capabilities"
+                                )
+                                or [],
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "movia_requirement_delta_resolution",
+                    "schema": _strict_requirement_delta_schema(),
+                    "strict": True,
+                }
+            },
+        )
+        resolution_payload = json.loads(response.output_text)
+        if (
+            resolution_payload.get("operation") == RequirementUpdateIntent.NO_CHANGE.value
+            and not resolution_payload.get("added_agent_actions")
+            and not resolution_payload.get("added_agent_capabilities")
+            and not resolution_payload.get("removed_agent_actions")
+            and not resolution_payload.get("removed_agent_capabilities")
+        ):
+            resolution_payload["evidence_span"] = None
+        resolution = RequirementDeltaSemanticResolution.model_validate(resolution_payload)
+        resolution = _sanitize_requirement_delta_resolution(
+            resolution,
+            message=message,
+            active_actions=active_actions,
+            active_capabilities=active_capabilities,
+        )
+        return resolution, response_usage(
+            response,
+            "requirement_delta",
+            openai_service.settings.analysis_model,
+            "openai",
+        )
+    except Exception as exc:
+        usage = empty_usage(
+            "requirement_delta", openai_service.settings.analysis_model, "fallback"
+        )
+        usage["error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        return None, usage
 
 
 def empty_requirement_profile() -> Dict[str, Any]:
@@ -63,6 +207,7 @@ def current_turn_requirement_delta(
     analyzer_observation: Dict[str, Any],
     message: str,
     existing_profile: Dict[str, Any],
+    semantic_resolution: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     existing_profile = ensure_requirement_profile({"requirement_profile": existing_profile})
     problems = _entries_from_observation(
@@ -80,6 +225,38 @@ def current_turn_requirement_delta(
         normalized_turn.get("requested_agent_actions") or [],
         strength_key="requirement_strength",
     )
+    semantic_resolution = dict(semantic_resolution or {})
+    semantic_evidence = str(semantic_resolution.get("evidence_span") or message)
+    capabilities = _dedupe_entries(
+        [
+            *capabilities,
+            *[
+                {
+                    "type": capability,
+                    "evidence_span": semantic_evidence,
+                    "strength": "explicit",
+                    "active": True,
+                    "source": "requirement_delta_resolver",
+                }
+                for capability in semantic_resolution.get("added_agent_capabilities") or []
+            ],
+        ]
+    )
+    actions = _dedupe_entries(
+        [
+            *actions,
+            *[
+                {
+                    "type": action,
+                    "evidence_span": semantic_evidence,
+                    "strength": "explicit",
+                    "active": True,
+                    "source": "requirement_delta_resolver",
+                }
+                for action in semantic_resolution.get("added_agent_actions") or []
+            ],
+        ]
+    )
     actions = _dedupe_entries(
         [
             *actions,
@@ -90,34 +267,48 @@ def current_turn_requirement_delta(
         entry for entry in capabilities if entry["type"] in INFORMATIONAL_AGENT_CAPABILITIES
     ]
     sales = [entry for entry in capabilities if entry["type"] in SALES_AGENT_CAPABILITIES]
-    removals = _detect_explicit_removals(existing_profile, message)
+    removed_capabilities = list(semantic_resolution.get("removed_agent_capabilities") or [])
+    removals = {
+        "informational_capabilities": [
+            item for item in removed_capabilities if item in INFORMATIONAL_AGENT_CAPABILITIES
+        ],
+        "sales_capabilities": [
+            item for item in removed_capabilities if item in SALES_AGENT_CAPABILITIES
+        ],
+        "external_actions": list(semantic_resolution.get("removed_agent_actions") or []),
+    }
+    if (
+        RequestedAgentAction.UNKNOWN_EXTERNAL_ACTION.value
+        in _active_types(existing_profile.get("external_actions"))
+        and any(
+            entry.get("type") != RequestedAgentAction.UNKNOWN_EXTERNAL_ACTION.value
+            for entry in actions
+        )
+    ):
+        removals["external_actions"].append(
+            RequestedAgentAction.UNKNOWN_EXTERNAL_ACTION.value
+        )
     declared_count = _declared_count_payload(
         analyzer_observation.get("declared_external_action_count"),
         normalized_turn.get("declared_external_action_count"),
     )
     has_additions = any([problems, informational, sales, actions, declared_count])
     has_removals = any(removals.values())
-    has_scope_narrowing = _has_scope_narrowing_replacement(
-        message=message,
-        new_entries=[*informational, *sales, *actions],
-        existing_profile=existing_profile,
-    )
     analyzer_update_intent = str(
-        analyzer_observation.get("requirement_update_intent")
+        semantic_resolution.get("operation")
+        or analyzer_observation.get("requirement_update_intent")
         or normalized_turn.get("requirement_update_intent")
         or RequirementUpdateIntent.NO_CHANGE.value
     )
     update_type = "no_update"
-    if analyzer_update_intent == RequirementUpdateIntent.REPLACE.value and has_additions:
+    if analyzer_update_intent == RequirementUpdateIntent.REPLACE.value:
         update_type = "replace"
-    elif has_additions and has_scope_narrowing:
-        update_type = "replace"
-    elif analyzer_update_intent == RequirementUpdateIntent.MERGE.value and has_additions:
-        update_type = "merge"
     elif has_additions and has_removals:
         update_type = "explicit_correction"
     elif has_removals:
         update_type = "explicit_removal"
+    elif analyzer_update_intent == RequirementUpdateIntent.MERGE.value and has_additions:
+        update_type = "merge"
     elif has_additions:
         update_type = "merge"
     return {
@@ -303,9 +494,7 @@ def _entries_from_observation(
 
 def _contextual_action_entries(raw_entries: Any) -> List[Dict[str, Any]]:
     result: List[Dict[str, Any]] = []
-    valid_actions = set(RequestedAgentAction.values()) - {
-        RequestedAgentAction.UNKNOWN_EXTERNAL_ACTION.value
-    }
+    valid_actions = set(RequestedAgentAction.values())
     for item in raw_entries or []:
         if not isinstance(item, dict):
             continue
@@ -414,6 +603,70 @@ def _active_types(entries: Optional[Iterable[Dict[str, Any]]]) -> List[str]:
     ]
 
 
+def _should_resolve_semantic_delta(
+    profile: Dict[str, Any], analyzer_observation: Dict[str, Any], *, candidate_hint: bool = False
+) -> bool:
+    if not _has_active_requirement(profile):
+        return False
+    return bool(
+        candidate_hint
+        or
+        analyzer_observation.get("requirement_update_intent")
+        not in {None, "", RequirementUpdateIntent.NO_CHANGE.value}
+        or analyzer_observation.get("requested_agent_actions")
+        or analyzer_observation.get("requested_agent_capabilities")
+    )
+
+
+def _sanitize_requirement_delta_resolution(
+    resolution: RequirementDeltaSemanticResolution,
+    *,
+    message: str,
+    active_actions: List[str],
+    active_capabilities: List[str],
+) -> RequirementDeltaSemanticResolution:
+    payload = resolution.model_dump()
+    evidence = payload.get("evidence_span")
+    if evidence and not evidence_span_in_message(str(evidence), message):
+        return RequirementDeltaSemanticResolution()
+    payload["removed_agent_actions"] = [
+        item for item in payload.get("removed_agent_actions") or [] if item in active_actions
+    ]
+    payload["removed_agent_capabilities"] = [
+        item
+        for item in payload.get("removed_agent_capabilities") or []
+        if item in active_capabilities
+    ]
+    if (
+        payload.get("operation") == RequirementUpdateIntent.NO_CHANGE.value
+        and not payload["removed_agent_actions"]
+        and not payload["removed_agent_capabilities"]
+    ):
+        payload["evidence_span"] = None
+    return RequirementDeltaSemanticResolution.model_validate(payload)
+
+
+def _strict_requirement_delta_schema() -> Dict[str, Any]:
+    schema = RequirementDeltaSemanticResolution.model_json_schema()
+
+    def visit(node: Any) -> None:
+        if isinstance(node, dict):
+            node.pop("default", None)
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                node["required"] = list(properties)
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for value in node:
+                visit(value)
+
+    visit(schema)
+    return schema
+
+
+# Retained for historical audit only. Runtime removal semantics are resolved by
+# RequirementDeltaSemanticResolution and never call these Spanish cue helpers.
 def _detect_explicit_removals(profile: Dict[str, Any], message: str) -> Dict[str, List[str]]:
     normalized = _normalize(message)
     if not _contains_removal_signal(normalized):

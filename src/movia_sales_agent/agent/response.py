@@ -659,6 +659,7 @@ def _compact_turn_signal_context(normalized_turn: Dict[str, Any]) -> Dict[str, A
             "action_requirement": normalized_turn.get("action_requirement"),
             "active_product_context": normalized_turn.get("active_product_context"),
             "referenced_product": normalized_turn.get("referenced_product"),
+            "product_references": normalized_turn.get("product_references") or [],
             "requested_product": normalized_turn.get("requested_product"),
             "recommended_product": normalized_turn.get("recommended_product"),
             "selected_product": normalized_turn.get("selected_product"),
@@ -733,6 +734,11 @@ def _official_product_response_requirements(
     normalized_turn: Dict[str, Any],
 ) -> List[str]:
     products = list(official_facts.get("products") or [])
+    referenced_products = {
+        str(reference.get("product"))
+        for reference in normalized_turn.get("product_references") or []
+        if isinstance(reference, dict) and reference.get("product")
+    }
     active_product = (
         normalized_turn.get("active_product_context")
         or normalized_turn.get("selected_product")
@@ -746,7 +752,9 @@ def _official_product_response_requirements(
         )
     for product in products:
         slug = str(product.get("slug") or "")
-        if active_product and slug != active_product:
+        if referenced_products and slug not in referenced_products:
+            continue
+        if not referenced_products and active_product and slug != active_product:
             continue
         capability_facts = product.get("capability_facts") or []
         if not capability_facts:

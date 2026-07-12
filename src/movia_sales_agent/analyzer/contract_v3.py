@@ -22,7 +22,7 @@ from movia_sales_agent.contracts.commercial import (
 from movia_sales_agent.models.schemas import AnalysisConfidence, LeadUpdates, TurnAnalysis
 
 
-ANALYZER_CONTRACT_VERSION = "3.1"
+ANALYZER_CONTRACT_VERSION = "3.2"
 
 
 class AnalyzerEnum(str, Enum):
@@ -119,6 +119,23 @@ class RequestedProduct(AnalyzerEnum):
     UNKNOWN_PRODUCT = "unknown_product"
 
 
+class ProductReferenceRole(AnalyzerEnum):
+    QUESTION_SUBJECT = "question_subject"
+    COMPARISON_ALTERNATIVE = "comparison_alternative"
+    PREFERRED = "preferred"
+    COMMITTED = "committed"
+    MENTIONED = "mentioned"
+
+
+class AnalyzerActiveObjectionRelation(AnalyzerEnum):
+    NONE = "none"
+    RESOLVED = "resolved"
+    CLARIFIED = "clarified"
+    REAFFIRMED = "reaffirmed"
+    CONTINUATION = "continuation"
+    UNRELATED = "unrelated"
+
+
 class AnalyzerReferenceType(AnalyzerEnum):
     NONE = "none"
     IMPLICIT_PRIOR_REFERENCE = "implicit_prior_reference"
@@ -191,16 +208,19 @@ class DeclaredExternalActionCountObservation(BaseModel):
         return self
 
 
-class RequestedProductObservation(BaseModel):
+class ProductReferenceObservation(BaseModel):
     model_config = ConfigDict(use_enum_values=True, validate_default=True, extra="forbid")
 
-    product: RequestedProduct = RequestedProduct.NONE
-    evidence_span: Optional[str] = None
+    product: RequestedProduct
+    evidence_span: str
+    reference_role: ProductReferenceRole = ProductReferenceRole.MENTIONED
 
     @model_validator(mode="after")
-    def require_product_evidence(self) -> "RequestedProductObservation":
-        if self.product != RequestedProduct.NONE.value and not (self.evidence_span or "").strip():
-            raise ValueError("requested product requires evidence_span")
+    def require_product_evidence(self) -> "ProductReferenceObservation":
+        if self.product == RequestedProduct.NONE.value:
+            raise ValueError("product references cannot use none")
+        if not (self.evidence_span or "").strip():
+            raise ValueError("product reference requires evidence_span")
         return self
 
 
@@ -209,14 +229,13 @@ class ObjectionCandidateObservation(BaseModel):
 
     type: ObjectionType = ObjectionType.NONE
     strength: ObjectionStrength = ObjectionStrength.NONE
-    relation: ObjectionRelation = ObjectionRelation.NONE
     evidence_span: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_objection_shape(self) -> "ObjectionCandidateObservation":
         if self.type == ObjectionType.NONE.value:
-            if self.strength != ObjectionStrength.NONE.value or self.relation != ObjectionRelation.NONE.value:
-                raise ValueError("none objection must have none strength and none relation")
+            if self.strength != ObjectionStrength.NONE.value:
+                raise ValueError("none objection must have none strength")
             if self.evidence_span:
                 raise ValueError("none objection cannot include evidence_span")
             return self
@@ -224,8 +243,23 @@ class ObjectionCandidateObservation(BaseModel):
             raise ValueError("objection candidate requires evidence_span")
         if self.strength == ObjectionStrength.NONE.value:
             raise ValueError("objection candidate requires non-none strength")
-        if self.relation == ObjectionRelation.NONE.value:
-            raise ValueError("objection candidate requires non-none relation")
+        return self
+
+
+class ActiveObjectionRelationObservation(BaseModel):
+    model_config = ConfigDict(use_enum_values=True, validate_default=True, extra="forbid")
+
+    relation: AnalyzerActiveObjectionRelation = AnalyzerActiveObjectionRelation.NONE
+    evidence_span: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_relation_shape(self) -> "ActiveObjectionRelationObservation":
+        if self.relation == AnalyzerActiveObjectionRelation.NONE.value:
+            if self.evidence_span:
+                raise ValueError("none active-objection relation cannot include evidence_span")
+            return self
+        if not (self.evidence_span or "").strip():
+            raise ValueError("active-objection relation requires evidence_span")
         return self
 
 
@@ -297,8 +331,11 @@ class AnalyzerTurnObservation(BaseModel):
     requested_agent_actions: List[AgentActionObservation] = Field(default_factory=list)
     declared_external_action_count: Optional[DeclaredExternalActionCountObservation] = None
     requirement_update_intent: RequirementUpdateIntent = RequirementUpdateIntent.NO_CHANGE
-    requested_product: RequestedProductObservation = Field(default_factory=RequestedProductObservation)
+    product_references: List[ProductReferenceObservation] = Field(default_factory=list)
     objection_candidate: ObjectionCandidateObservation = Field(default_factory=ObjectionCandidateObservation)
+    active_objection_relation: ActiveObjectionRelationObservation = Field(
+        default_factory=ActiveObjectionRelationObservation
+    )
     purchase_readiness: PurchaseReadinessObservation = Field(default_factory=PurchaseReadinessObservation)
     prior_reference: PriorReferenceObservation = Field(default_factory=PriorReferenceObservation)
     post_purchase_signal: PostPurchaseSignalObservation = Field(default_factory=PostPurchaseSignalObservation)
@@ -308,12 +345,42 @@ class AnalyzerTurnObservation(BaseModel):
     def validate_version(self) -> "AnalyzerTurnObservation":
         if self.analyzer_contract_version != ANALYZER_CONTRACT_VERSION:
             raise ValueError(f"analyzer_contract_version must be {ANALYZER_CONTRACT_VERSION}")
+        if self.product_references:
+            deduped = _dedupe_product_references(
+                [reference.model_dump() for reference in self.product_references]
+            )
+            self.product_references = [
+                ProductReferenceObservation.model_validate(reference)
+                for reference in deduped
+            ]
+            roles = {reference.reference_role for reference in self.product_references}
+            if (
+                len(self.product_references) > 1
+                and ProductReferenceRole.QUESTION_SUBJECT.value in roles
+                and ProductReferenceRole.COMPARISON_ALTERNATIVE.value in roles
+                and self.primary_intent == Intent.PRODUCT_SCOPE_QUESTION.value
+            ):
+                self.primary_intent = Intent.COMPARISON_QUESTION.value
+        if (
+            self.primary_intent == Intent.EXPLICIT_START_REQUEST.value
+            and self.purchase_readiness.level != BuyingSignal.EXPLICIT_START.value
+        ):
+            self.primary_intent = (
+                Intent.PRODUCT_SCOPE_QUESTION.value
+                if self.requested_agent_actions or self.requested_agent_capabilities
+                else Intent.GENERAL_INFO.value
+            )
+        if self.requirement_update_intent == RequirementUpdateIntent.NO_CHANGE.value:
+            self.requested_agent_actions = []
+            self.requested_agent_capabilities = []
+            self.declared_external_action_count = None
         return self
 
 
 def analyzer_json_schema() -> Dict[str, Any]:
     schema = AnalyzerTurnObservation.model_json_schema()
     _strip_json_schema_defaults(schema)
+    _strip_json_schema_titles(schema)
     _require_all_object_properties(schema)
     return schema
 
@@ -359,13 +426,19 @@ def sanitize_analyzer_observation_payload(payload: Dict[str, Any], message: str)
             declared_count, message
         )
 
-    requested_product = cleaned.get("requested_product")
-    if isinstance(requested_product, dict):
-        _sanitize_requested_product_payload(requested_product, message)
+    product_references = cleaned.get("product_references")
+    if isinstance(product_references, list):
+        cleaned["product_references"] = _sanitize_product_references_payload(
+            product_references, message
+        )
 
     objection = cleaned.get("objection_candidate")
     if isinstance(objection, dict):
         _sanitize_objection_payload(objection, message)
+
+    active_relation = cleaned.get("active_objection_relation")
+    if isinstance(active_relation, dict):
+        _sanitize_active_objection_relation_payload(active_relation, message)
 
     readiness = cleaned.get("purchase_readiness")
     if isinstance(readiness, dict):
@@ -386,6 +459,13 @@ def evidence_span_in_message(evidence_span: str, message: str) -> bool:
     evidence = _normalize_for_evidence(evidence_span)
     text = _normalize_for_evidence(message)
     return bool(evidence) and evidence in text
+
+
+def legacy_requested_product(observation: AnalyzerTurnObservation) -> str:
+    """Return the transitional singular alias only for one unambiguous product."""
+
+    products = _dedupe([str(item.product) for item in observation.product_references])
+    return products[0] if len(products) == 1 else RequestedProduct.NONE.value
 
 
 def observation_to_turn_analysis(observation: AnalyzerTurnObservation, message: str) -> TurnAnalysis:
@@ -413,7 +493,7 @@ def observation_to_turn_analysis(observation: AnalyzerTurnObservation, message: 
         has_objection=objection.type != ObjectionType.NONE.value,
         objection_type=objection.type,
         objection_strength=objection.strength,
-        objection_relation=objection.relation,
+        objection_relation=_legacy_objection_relation(observation),
         business_type=facts.business_type,
         main_channel=facts.main_channel,
         pain=facts.pain_or_goal,
@@ -444,12 +524,22 @@ def legacy_analysis_to_observation(analysis: TurnAnalysis, message: str) -> Anal
     post_purchase_evidence = message if analysis.is_post_purchase else None
     requested_actions = _actions_from_legacy_profile_data(analysis, message)
     requested_capabilities = _capabilities_from_legacy_profile_data(analysis, message)
+    declared_action_count = _declared_external_action_count_from_message(message)
     objection_type = analysis.objection_type if analysis.has_objection else ObjectionType.NONE.value
     objection_strength = (
         analysis.objection_strength if analysis.has_objection else ObjectionStrength.NONE.value
     )
-    objection_relation = (
-        analysis.objection_relation if analysis.has_objection else ObjectionRelation.NONE.value
+    active_relation = (
+        analysis.objection_relation
+        if analysis.objection_relation
+        in {
+            ObjectionRelation.RESOLVED.value,
+            ObjectionRelation.CLARIFIED.value,
+            ObjectionRelation.REAFFIRMED.value,
+            ObjectionRelation.CONTINUATION.value,
+            ObjectionRelation.UNRELATED.value,
+        }
+        else ObjectionRelation.NONE.value
     )
     return AnalyzerTurnObservation(
         primary_intent=analysis.primary_intent,
@@ -463,16 +553,23 @@ def legacy_analysis_to_observation(analysis: TurnAnalysis, message: str) -> Anal
         observed_business_problems=_observed_business_problems_from_legacy_analysis(analysis, message),
         requested_agent_capabilities=requested_capabilities,
         requested_agent_actions=requested_actions,
-        declared_external_action_count=_declared_external_action_count_from_message(message),
+        declared_external_action_count=declared_action_count,
         requirement_update_intent=_requirement_update_intent_from_legacy_analysis(
-            analysis, message, requested_capabilities, requested_actions
+            analysis,
+            message,
+            requested_capabilities,
+            requested_actions,
+            declared_action_count,
         ),
-        requested_product=_product_from_message(message),
+        product_references=_product_references_from_message(message),
         objection_candidate=ObjectionCandidateObservation(
             type=objection_type,
             strength=objection_strength,
-            relation=objection_relation,
             evidence_span=objection_evidence,
+        ),
+        active_objection_relation=ActiveObjectionRelationObservation(
+            relation=active_relation,
+            evidence_span=message if active_relation != ObjectionRelation.NONE.value else None,
         ),
         purchase_readiness=PurchaseReadinessObservation(
             level=analysis.buying_signal,
@@ -515,11 +612,12 @@ def analyzer_contract_document() -> Dict[str, Any]:
             "requested_agent_actions": RequestedAgentAction.values(),
             "requirement_update_intents": RequirementUpdateIntent.values(),
             "requested_products": RequestedProduct.values(),
+            "product_reference_roles": ProductReferenceRole.values(),
             "prior_reference_types": AnalyzerReferenceType.values(),
             "purchase_readiness": BuyingSignal.values(),
             "objection_types": ObjectionType.values(),
             "objection_strengths": ObjectionStrength.values(),
-            "objection_relations": ObjectionRelation.values(),
+            "active_objection_relations": AnalyzerActiveObjectionRelation.values(),
             "intents": Intent.values(),
         },
         "semantic_fields": [
@@ -563,10 +661,12 @@ def _evidence_paths(observation: AnalyzerTurnObservation) -> Iterable[Tuple[str,
         yield f"requested_agent_actions[{index}].evidence_span", action.evidence_span
     if observation.declared_external_action_count:
         yield "declared_external_action_count.evidence_span", observation.declared_external_action_count.evidence_span
-    if observation.requested_product.product != RequestedProduct.NONE.value:
-        yield "requested_product.evidence_span", observation.requested_product.evidence_span
+    for index, product in enumerate(observation.product_references):
+        yield f"product_references[{index}].evidence_span", product.evidence_span
     if observation.objection_candidate.type != ObjectionType.NONE.value:
         yield "objection_candidate.evidence_span", observation.objection_candidate.evidence_span
+    if observation.active_objection_relation.relation != AnalyzerActiveObjectionRelation.NONE.value:
+        yield "active_objection_relation.evidence_span", observation.active_objection_relation.evidence_span
     if observation.purchase_readiness.level in {BuyingSignal.HIGH.value, BuyingSignal.EXPLICIT_START.value}:
         yield "purchase_readiness.evidence_span", observation.purchase_readiness.evidence_span
     if observation.prior_reference.type != AnalyzerReferenceType.NONE.value:
@@ -575,19 +675,40 @@ def _evidence_paths(observation: AnalyzerTurnObservation) -> Iterable[Tuple[str,
         yield "post_purchase_signal.evidence_span", observation.post_purchase_signal.evidence_span
 
 
-def _sanitize_requested_product_payload(payload: Dict[str, Any], message: str) -> None:
-    product = payload.get("product") or RequestedProduct.NONE.value
-    if product == RequestedProduct.NONE.value:
+def _sanitize_product_references_payload(
+    references: List[Any], message: str
+) -> List[Dict[str, Any]]:
+    sanitized: List[Dict[str, Any]] = []
+    for reference in references:
+        if not isinstance(reference, dict):
+            continue
+        product = reference.get("product")
+        role = reference.get("reference_role")
+        if product not in RequestedProduct.values() or product == RequestedProduct.NONE.value:
+            continue
+        if role not in ProductReferenceRole.values():
+            continue
+        item = dict(reference)
+        repaired = _product_reference_from_message(message, product, role)
+        if not repaired:
+            continue
+        item["evidence_span"] = repaired.evidence_span
+        sanitized.append(item)
+    return _dedupe_product_references(sanitized)
+
+
+def _sanitize_active_objection_relation_payload(payload: Dict[str, Any], message: str) -> None:
+    relation = payload.get("relation") or AnalyzerActiveObjectionRelation.NONE.value
+    if relation not in AnalyzerActiveObjectionRelation.values():
+        payload["relation"] = AnalyzerActiveObjectionRelation.NONE.value
         payload["evidence_span"] = None
         return
-    if evidence_span_in_message(str(payload.get("evidence_span") or ""), message):
+    if relation == AnalyzerActiveObjectionRelation.NONE.value:
+        payload["evidence_span"] = None
         return
-    repaired = _product_from_message(message)
-    if repaired.product == product and repaired.evidence_span:
-        payload["evidence_span"] = repaired.evidence_span
-        return
-    payload["product"] = RequestedProduct.NONE.value
-    payload["evidence_span"] = None
+    if not evidence_span_in_message(str(payload.get("evidence_span") or ""), message):
+        payload["relation"] = AnalyzerActiveObjectionRelation.NONE.value
+        payload["evidence_span"] = None
 
 
 def _sanitize_business_problems_payload(
@@ -624,6 +745,16 @@ def _sanitize_requested_capabilities_payload(
             continue
         evidence_span = str(capability.get("evidence_span") or "")
         if evidence_span_in_message(evidence_span, message):
+            ontology_evidence = _first_matching_evidence(
+                evidence_span, _capability_evidence_cues(capability_type)
+            )
+            if not ontology_evidence:
+                continue
+            if _is_full_message_span(evidence_span, message):
+                repaired_capability = dict(capability)
+                repaired_capability["evidence_span"] = ontology_evidence
+                sanitized.append(repaired_capability)
+                continue
             sanitized.append(dict(capability))
             continue
         repaired = _first_matching_evidence(message, _capability_evidence_cues(capability_type))
@@ -638,7 +769,18 @@ def _sanitize_objection_payload(payload: Dict[str, Any], message: str) -> None:
     objection_type = payload.get("type") or ObjectionType.NONE.value
     if objection_type == ObjectionType.NONE.value:
         payload["strength"] = ObjectionStrength.NONE.value
-        payload["relation"] = ObjectionRelation.NONE.value
+        payload.pop("relation", None)
+        payload["evidence_span"] = None
+        return
+    strength = payload.get("strength") or ObjectionStrength.NONE.value
+    if (
+        objection_type not in ObjectionType.values()
+        or strength not in ObjectionStrength.values()
+        or strength == ObjectionStrength.NONE.value
+    ):
+        payload["type"] = ObjectionType.NONE.value
+        payload["strength"] = ObjectionStrength.NONE.value
+        payload.pop("relation", None)
         payload["evidence_span"] = None
         return
     if evidence_span_in_message(str(payload.get("evidence_span") or ""), message):
@@ -649,7 +791,7 @@ def _sanitize_objection_payload(payload: Dict[str, Any], message: str) -> None:
         return
     payload["type"] = ObjectionType.NONE.value
     payload["strength"] = ObjectionStrength.NONE.value
-    payload["relation"] = ObjectionRelation.NONE.value
+    payload.pop("relation", None)
     payload["evidence_span"] = None
 
 
@@ -727,6 +869,16 @@ def _sanitize_requested_actions_payload(actions: List[Any], message: str) -> Lis
             continue
         evidence_span = str(action.get("evidence_span") or "")
         if evidence_span_in_message(evidence_span, message):
+            ontology_evidence = _first_matching_evidence(
+                evidence_span, _action_evidence_cues(action_type)
+            )
+            if not ontology_evidence:
+                continue
+            if _is_full_message_span(evidence_span, message):
+                repaired_action = dict(action)
+                repaired_action["evidence_span"] = ontology_evidence
+                sanitized.append(repaired_action)
+                continue
             sanitized.append(dict(action))
             continue
         repaired = _first_matching_evidence(message, _action_evidence_cues(action_type))
@@ -748,7 +900,18 @@ def _action_evidence_cues(action_type: str) -> List[str]:
         RequestedAgentAction.SEND_REMINDER.value: ["recordatorio", "recordar"],
         RequestedAgentAction.FOLLOW_UP_LEAD.value: ["seguimiento", "dar seguimiento"],
         RequestedAgentAction.SEND_NOTIFICATION.value: ["notificar", "notificación", "notificacion", "avisar"],
-        RequestedAgentAction.TAKE_PAYMENT.value: ["cobrar", "pago", "pagar", "tarjeta"],
+        RequestedAgentAction.TAKE_PAYMENT.value: [
+            "cobrar",
+            "cobre",
+            "cobro",
+            "cobros",
+            "pago",
+            "pagos",
+            "pagar",
+            "tarjeta",
+            "anticipo",
+            "anticipos",
+        ],
         RequestedAgentAction.UNKNOWN_EXTERNAL_ACTION.value: ["sistema", "panel", "crm", "base", "externo"],
     }
     return cues.get(action_type, [])
@@ -775,10 +938,38 @@ def _business_problem_evidence_cues(problem_type: str) -> List[str]:
 
 def _capability_evidence_cues(capability_type: str) -> List[str]:
     cues = {
-        RequestedAgentCapability.ANSWER_CUSTOMER_QUESTIONS.value: ["responda dudas", "responder dudas", "contestar preguntas", "responder preguntas"],
-        RequestedAgentCapability.PROVIDE_PRICES.value: ["dé precios", "de precios", "dar precios", "les diga precios"],
-        RequestedAgentCapability.PROVIDE_CATALOG_INFORMATION.value: ["explique catálogo", "explique catalogo", "catálogo", "catalogo"],
-        RequestedAgentCapability.CAPTURE_LEAD_DATA.value: ["capture datos", "capturar datos", "capture leads", "capturar leads"],
+        RequestedAgentCapability.ANSWER_CUSTOMER_QUESTIONS.value: [
+            "responder",
+            "responda",
+            "contestar",
+            "dudas",
+            "preguntas",
+        ],
+        RequestedAgentCapability.PROVIDE_PRICES.value: [
+            "dé precios",
+            "de precios",
+            "dar precios",
+            "diga precios",
+            "les diga precios",
+        ],
+        RequestedAgentCapability.PROVIDE_CATALOG_INFORMATION.value: [
+            "dar información",
+            "dar informacion",
+            "información de productos",
+            "informacion de productos",
+            "explique catálogo",
+            "explique catalogo",
+            "catálogo",
+            "catalogo",
+        ],
+        RequestedAgentCapability.CAPTURE_LEAD_DATA.value: [
+            "capture datos",
+            "capturar datos",
+            "guardar datos",
+            "tomar datos",
+            "capture leads",
+            "capturar leads",
+        ],
         RequestedAgentCapability.QUALIFY_LEADS.value: ["califique leads", "filtre leads", "calificar leads"],
         RequestedAgentCapability.REDIRECT_TO_HUMAN.value: ["pase con una persona", "redirija a humano", "mande a humano"],
         RequestedAgentCapability.UNDERSTAND_AUDIO.value: ["escuche audios", "entienda audios", "audio"],
@@ -904,6 +1095,18 @@ def _strip_json_schema_defaults(node: Any) -> None:
             _strip_json_schema_defaults(item)
 
 
+def _strip_json_schema_titles(node: Any) -> None:
+    """Drop descriptive Pydantic titles that do not constrain structured output."""
+
+    if isinstance(node, dict):
+        node.pop("title", None)
+        for value in node.values():
+            _strip_json_schema_titles(value)
+    elif isinstance(node, list):
+        for item in node:
+            _strip_json_schema_titles(item)
+
+
 ANALYZER_V3_SCHEMA = analyzer_json_schema()
 
 
@@ -965,11 +1168,21 @@ def _temporary_profile_aliases(observation: AnalyzerTurnObservation) -> Dict[str
     ):
         profile_data["action_requirement"] = ActionRequirement.ANSWERS_ONLY.value
         profile_data["known_product_fit"] = ProductFit.MOVIA_CAPTURA.value
-    if observation.requested_product.product == RequestedProduct.MOVIA_VENTAS.value:
+    requested_product = legacy_requested_product(observation)
+    if requested_product == RequestedProduct.MOVIA_VENTAS.value:
         profile_data["known_product_fit"] = ProductFit.MOVIA_VENTAS_UNAVAILABLE.value
-    elif observation.requested_product.product == RequestedProduct.MOVIA_PRO_COMERCIAL.value:
+    elif requested_product == RequestedProduct.MOVIA_PRO_COMERCIAL.value:
         profile_data["known_product_fit"] = ProductFit.MOVIA_PRO_COMERCIAL_UNAVAILABLE.value
     return profile_data
+
+
+def _legacy_objection_relation(observation: AnalyzerTurnObservation) -> str:
+    relation = str(observation.active_objection_relation.relation)
+    if relation != AnalyzerActiveObjectionRelation.NONE.value:
+        return relation
+    if observation.objection_candidate.type != ObjectionType.NONE.value:
+        return ObjectionRelation.NEW.value
+    return ObjectionRelation.NONE.value
 
 
 def _requirement_update_intent_from_legacy_analysis(
@@ -977,8 +1190,9 @@ def _requirement_update_intent_from_legacy_analysis(
     message: str,
     requested_capabilities: List[AgentCapabilityObservation],
     requested_actions: List[AgentActionObservation],
+    declared_action_count: Optional[DeclaredExternalActionCountObservation],
 ) -> str:
-    if not requested_capabilities and not requested_actions:
+    if not requested_capabilities and not requested_actions and not declared_action_count:
         return RequirementUpdateIntent.NO_CHANGE.value
     text = _normalize_for_evidence(message)
     if any(
@@ -1278,22 +1492,96 @@ def _explicit_action_requested(message: str, cues: List[str]) -> bool:
     return _has_future_agent_request_context(message) and _contains_any_normalized(message, cues)
 
 
-def _product_from_message(message: str) -> RequestedProductObservation:
+def _product_references_from_message(message: str) -> List[ProductReferenceObservation]:
     text = _normalize_for_evidence(message)
-    if "captura" in text:
-        return RequestedProductObservation(product=RequestedProduct.MOVIA_CAPTURA, evidence_span=_best_span(message, ["Captura", "captura"]))
-    if "hibrido" in text:
-        return RequestedProductObservation(product=RequestedProduct.MOVIA_HIBRIDO, evidence_span=_best_span(message, ["Híbrido", "hibrido", "híbrido"]))
-    if "ventas" in text:
-        return RequestedProductObservation(product=RequestedProduct.MOVIA_VENTAS, evidence_span=_best_span(message, ["Ventas", "ventas"]))
-    if "pro comercial" in text:
-        return RequestedProductObservation(product=RequestedProduct.MOVIA_PRO_COMERCIAL, evidence_span=_best_span(message, ["Pro Comercial", "pro comercial"]))
-    return RequestedProductObservation()
+    matches: List[Tuple[str, List[str]]] = [
+        (RequestedProduct.MOVIA_CAPTURA.value, ["Captura", "captura"]),
+        (RequestedProduct.MOVIA_HIBRIDO.value, ["Híbrido", "hibrido", "híbrido"]),
+        (RequestedProduct.MOVIA_VENTAS.value, ["Ventas", "ventas"]),
+        (RequestedProduct.MOVIA_PRO_COMERCIAL.value, ["Pro Comercial", "pro comercial"]),
+    ]
+    found = [(product, cues) for product, cues in matches if any(_normalize_for_evidence(cue) in text for cue in cues)]
+    if not found:
+        return []
+    committed = _contains_any_normalized(
+        message,
+        [
+            "me quedo con",
+            "quiero contratar",
+            "elijo",
+            "vamos con",
+            "quiero empezar con",
+            "empezar con",
+            "iniciar con",
+        ],
+    )
+    preferred = _contains_any_normalized(message, ["prefiero", "me conviene", "me interesa más"])
+    comparison = len(found) > 1 or _contains_any_normalized(message, ["compar", " vs ", "o necesito"])
+    references: List[ProductReferenceObservation] = []
+    for index, (product, cues) in enumerate(found):
+        role = ProductReferenceRole.MENTIONED.value
+        if committed and index == len(found) - 1:
+            role = ProductReferenceRole.COMMITTED.value
+        elif preferred and index == len(found) - 1:
+            role = ProductReferenceRole.PREFERRED.value
+        elif comparison:
+            role = (
+                ProductReferenceRole.QUESTION_SUBJECT.value
+                if index == 0
+                else ProductReferenceRole.COMPARISON_ALTERNATIVE.value
+            )
+        else:
+            role = ProductReferenceRole.QUESTION_SUBJECT.value
+        references.append(
+            ProductReferenceObservation(
+                product=product,
+                evidence_span=_best_span(message, cues),
+                reference_role=role,
+            )
+        )
+    return references
+
+
+def _product_reference_from_message(
+    message: str, product: str, role: str
+) -> Optional[ProductReferenceObservation]:
+    for reference in _product_references_from_message(message):
+        if reference.product == product:
+            return reference.model_copy(update={"reference_role": role})
+    return None
+
+
+def _dedupe_product_references(references: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    precedence = {
+        ProductReferenceRole.MENTIONED.value: 0,
+        ProductReferenceRole.COMPARISON_ALTERNATIVE.value: 1,
+        ProductReferenceRole.QUESTION_SUBJECT.value: 2,
+        ProductReferenceRole.PREFERRED.value: 3,
+        ProductReferenceRole.COMMITTED.value: 4,
+    }
+    by_product: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    for reference in references:
+        product = str(reference.get("product") or "")
+        if product not in by_product:
+            by_product[product] = reference
+            order.append(product)
+            continue
+        current = by_product[product]
+        if precedence.get(str(reference.get("reference_role")), -1) > precedence.get(
+            str(current.get("reference_role")), -1
+        ):
+            by_product[product] = reference
+    return [by_product[product] for product in order]
 
 
 def _contains_any_normalized(message: str, needles: List[str]) -> bool:
     text = _normalize_for_evidence(message)
     return any(_normalize_for_evidence(needle) in text for needle in needles)
+
+
+def _is_full_message_span(evidence_span: str, message: str) -> bool:
+    return _normalize_for_evidence(evidence_span) == _normalize_for_evidence(message)
 
 
 def _best_span(message: str, needles: List[str]) -> str:

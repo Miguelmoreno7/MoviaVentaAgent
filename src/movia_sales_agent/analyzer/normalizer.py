@@ -5,13 +5,16 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 from pydantic import BaseModel, ConfigDict, Field
 
 from movia_sales_agent.analyzer.contract_v3 import (
+    AnalyzerActiveObjectionRelation,
     AnalyzerReferenceType,
     AnalyzerTurnObservation,
     INFORMATIONAL_AGENT_CAPABILITIES,
+    ProductReferenceRole,
     RequestedAgentAction,
     RequirementUpdateIntent,
     RequestedProduct,
     evidence_span_in_message,
+    legacy_requested_product,
     observation_to_turn_analysis,
 )
 from movia_sales_agent.contracts.commercial import (
@@ -26,7 +29,7 @@ from movia_sales_agent.contracts.commercial import (
 from movia_sales_agent.models.schemas import TurnAnalysis
 
 
-NORMALIZED_TURN_CONTRACT_VERSION = "3.1"
+NORMALIZED_TURN_CONTRACT_VERSION = "3.2"
 CORE_COMMERCIAL_SLOTS = ["business_type", "main_channel", "pain_or_goal", "action_requirement"]
 AVAILABLE_PRODUCTS = {RequestedProduct.MOVIA_CAPTURA.value, RequestedProduct.MOVIA_HIBRIDO.value}
 UNAVAILABLE_PRODUCTS = {
@@ -73,6 +76,7 @@ class NormalizedTurn(BaseModel):
     explicit_start_intent: bool = False
     is_post_purchase: bool = False
     action_requirement: ActionRequirement = ActionRequirement.UNKNOWN
+    product_references: List[Dict[str, str]] = Field(default_factory=list)
     requested_product: RequestedProduct = RequestedProduct.NONE
     recommended_product: Optional[ProductFit] = None
     selected_product: Optional[RequestedProduct] = None
@@ -109,7 +113,7 @@ def normalize_analyzer_turn(
     contradictions: List[NormalizationIssue] = []
     warnings: List[str] = []
 
-    # Contract V3.1 already validates enum values and literal current-message
+    # Contract V3.2 already validates enum values and literal current-message
     # evidence.  The former Spanish cue filter is intentionally kept below for
     # future review, but must not second-guess the analyzer's semantic output.
     # valid_actions = [
@@ -134,15 +138,23 @@ def normalize_analyzer_turn(
     ]
 
     normalized_objection = _normalize_objection(observation, message, contradictions)
-    objection_relation = _derive_objection_relation(message, normalized_objection)
+    objection_relation = _normalize_active_objection_relation(
+        observation,
+        message,
+        lead_profile,
+        normalized_objection,
+        contradictions,
+    )
+    normalized_objection["relation"] = objection_relation
     normalized_prior = _normalize_prior_reference(observation, message, contradictions)
     explicit_start = _derive_explicit_start(observation, message, contradictions)
     is_post_purchase = _derive_post_purchase(observation, message, contradictions)
     action_requirement = _derive_action_requirement(valid_actions, informational_capabilities)
-    requested_product = _normalize_requested_product(observation, message, contradictions)
+    product_references = _normalize_product_references(observation, message, contradictions)
+    requested_product = legacy_requested_product(observation)
     recommended_product = _derive_recommended_product(action_requirement)
     selected_product = _derive_selected_product(
-        requested_product,
+        product_references,
         recommended_product,
         explicit_start,
         observation.purchase_readiness.evidence_span,
@@ -196,6 +208,7 @@ def normalize_analyzer_turn(
         explicit_start_intent=explicit_start,
         is_post_purchase=is_post_purchase,
         action_requirement=action_requirement,
+        product_references=product_references,
         requested_product=requested_product,
         recommended_product=recommended_product,
         selected_product=selected_product,
@@ -305,11 +318,7 @@ def compare_parser_to_llm(
             else observation.observed_business_problems
         )
     }
-    product_types = {
-        observation.requested_product.product
-        if observation.requested_product.product != RequestedProduct.NONE.value
-        else None
-    } - {None}
+    product_types = {str(reference.product) for reference in observation.product_references}
     purchase_types = {
         observation.purchase_readiness.level
         if observation.purchase_readiness.level != BuyingSignal.NONE.value
@@ -353,7 +362,7 @@ def _normalize_objection(
 ) -> Dict[str, Any]:
     objection = observation.objection_candidate
     if objection.type == ObjectionType.NONE.value:
-        if objection.strength != ObjectionStrength.NONE.value or objection.relation != ObjectionRelation.NONE.value or objection.evidence_span:
+        if objection.strength != ObjectionStrength.NONE.value or objection.evidence_span:
             contradictions.append(
                 _issue(
                     "normalized_empty_objection",
@@ -361,7 +370,6 @@ def _normalize_objection(
                     {
                         "type": ObjectionType.NONE.value,
                         "strength": ObjectionStrength.NONE.value,
-                        "relation": ObjectionRelation.NONE.value,
                         "evidence_span": None,
                     },
                 )
@@ -369,7 +377,6 @@ def _normalize_objection(
         return {
             "type": ObjectionType.NONE.value,
             "strength": ObjectionStrength.NONE.value,
-            "relation": ObjectionRelation.NONE.value,
             "evidence_span": None,
         }
     if not _valid_evidence(objection.evidence_span, message):
@@ -380,7 +387,6 @@ def _normalize_objection(
                 {
                     "type": ObjectionType.NONE.value,
                     "strength": ObjectionStrength.NONE.value,
-                    "relation": ObjectionRelation.NONE.value,
                     "evidence_span": None,
                 },
             )
@@ -388,7 +394,6 @@ def _normalize_objection(
         return {
             "type": ObjectionType.NONE.value,
             "strength": ObjectionStrength.NONE.value,
-            "relation": ObjectionRelation.NONE.value,
             "evidence_span": None,
         }
     return objection.model_dump()
@@ -432,47 +437,47 @@ def _normalize_prior_reference(
     return prior.model_dump()
 
 
-def _derive_objection_relation(message: str, normalized_objection: Dict[str, Any]) -> str:
-    if normalized_objection.get("type") != ObjectionType.NONE.value:
-        return normalized_objection.get("relation") or ObjectionRelation.NEW.value
-    text = _simple_normalize(message)
-    if _contains_any(
-        text,
-        [
-            "ok eso tiene sentido",
-            "eso tiene sentido",
-            "queda claro",
-            "me queda claro",
-            "ya entendi",
-            "me sirve",
-            "suena bien",
-            "me convenciste",
-            "perfecto",
-            "ya no es tanto problema",
-            "no es tanto problema",
-            "con eso ya no es tanto problema",
-            "ya no me preocupa",
-            "con eso me quedo tranquilo",
-        ],
-    ):
-        return ObjectionRelation.RESOLVED.value
-    if _contains_any(
-        text,
-        [
-            "lo que me preocupa",
-            "lo que me pesa",
-            "mi duda es",
-            "mi bloqueo",
-            "pago inicial",
-            "vale la pena",
-            "recuperar tiempo",
-            "ahorrar tiempo",
-        ],
-    ):
-        return ObjectionRelation.CLARIFIED.value
-    if _contains_any(text, ["demuestr", "muestrame", "prueba", "evidencia", "caso real"]):
-        return ObjectionRelation.CONTINUATION.value
-    return ObjectionRelation.NONE.value
+def _normalize_active_objection_relation(
+    observation: AnalyzerTurnObservation,
+    message: str,
+    lead_profile: Dict[str, Any],
+    normalized_objection: Dict[str, Any],
+    contradictions: List[NormalizationIssue],
+) -> str:
+    active = dict(lead_profile.get("active_objection") or {})
+    active_type = str(active.get("type") or ObjectionType.NONE.value)
+    has_active = bool(active.get("active")) and active_type != ObjectionType.NONE.value
+    relation_observation = observation.active_objection_relation
+    relation = str(relation_observation.relation)
+
+    if relation != AnalyzerActiveObjectionRelation.NONE.value:
+        if not has_active or not _valid_evidence(relation_observation.evidence_span, message):
+            contradictions.append(
+                _issue(
+                    "active_objection_relation_without_valid_active_context",
+                    relation_observation.model_dump(),
+                    {"objection_relation": ObjectionRelation.NONE.value},
+                )
+            )
+            relation = AnalyzerActiveObjectionRelation.NONE.value
+        else:
+            return relation
+
+    candidate_type = str(normalized_objection.get("type") or ObjectionType.NONE.value)
+    if candidate_type == ObjectionType.NONE.value:
+        if has_active:
+            contradictions.append(
+                _issue(
+                    "missing_active_objection_relation_defaults_unrelated",
+                    relation_observation.model_dump(),
+                    {"objection_relation": ObjectionRelation.UNRELATED.value},
+                )
+            )
+            return ObjectionRelation.UNRELATED.value
+        return ObjectionRelation.NONE.value
+    if not has_active or candidate_type != active_type:
+        return ObjectionRelation.NEW.value
+    return ObjectionRelation.CONTINUATION.value
 
 
 def _derive_explicit_start(
@@ -523,24 +528,30 @@ def _derive_action_requirement(valid_actions: Sequence[Any], valid_capabilities:
     return ActionRequirement.UNKNOWN.value
 
 
-def _normalize_requested_product(
+def _normalize_product_references(
     observation: AnalyzerTurnObservation,
     message: str,
     contradictions: List[NormalizationIssue],
-) -> str:
-    requested = observation.requested_product
-    if requested.product == RequestedProduct.NONE.value:
-        return RequestedProduct.NONE.value
-    if not _valid_evidence(requested.evidence_span, message):
-        contradictions.append(
-            _issue(
-                "invalid_requested_product_evidence",
-                requested.model_dump(),
-                {"requested_product": RequestedProduct.NONE.value},
+) -> List[Dict[str, str]]:
+    normalized: List[Dict[str, str]] = []
+    for reference in observation.product_references:
+        if not _valid_evidence(reference.evidence_span, message):
+            contradictions.append(
+                _issue(
+                    "invalid_product_reference_evidence",
+                    reference.model_dump(),
+                    {"product_reference": None},
+                )
             )
+            continue
+        normalized.append(
+            {
+                "product": str(reference.product),
+                "evidence_span": reference.evidence_span,
+                "reference_role": str(reference.reference_role),
+            }
         )
-        return RequestedProduct.NONE.value
-    return requested.product
+    return normalized
 
 
 def _derive_recommended_product(action_requirement: str) -> Optional[str]:
@@ -552,13 +563,21 @@ def _derive_recommended_product(action_requirement: str) -> Optional[str]:
 
 
 def _derive_selected_product(
-    requested_product: str,
+    product_references: List[Dict[str, str]],
     recommended_product: Optional[str],
     explicit_start: bool,
     purchase_evidence: Optional[str],
     message: str,
     contradictions: List[NormalizationIssue],
 ) -> Optional[str]:
+    committed = [
+        reference
+        for reference in product_references
+        if reference.get("reference_role") == ProductReferenceRole.COMMITTED.value
+    ]
+    if len(committed) != 1:
+        return None
+    requested_product = str(committed[0].get("product") or RequestedProduct.NONE.value)
     if requested_product in UNAVAILABLE_PRODUCTS:
         contradictions.append(
             _issue(
@@ -574,7 +593,7 @@ def _derive_selected_product(
         return None
     if not explicit_start:
         return None
-    if not _product_selection_commitment(requested_product, purchase_evidence, message):
+    if not _valid_evidence(committed[0].get("evidence_span"), message):
         return None
     return requested_product
 

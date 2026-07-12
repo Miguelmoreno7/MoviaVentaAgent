@@ -1,0 +1,529 @@
+{
+  "dataset_version": "v1.0-production-contract-2026-07-11",
+  "target_analyzer_contract_version": "3.2",
+  "commercial_contract_version": "2.0",
+  "analysis_model": "gpt-4.1-mini",
+  "critical_repetitions": 5,
+  "provenance": {
+    "authoritative_history": "public.movia_conversation_messages",
+    "human_transcript_source": "Chatwoot",
+    "source_conversation_ids": [84, 85, 86, 89],
+    "pii_policy": "Phone numbers, contact names, message IDs and lead IDs are excluded.",
+    "frozen_before_runtime_changes": true
+  },
+  "baseline_failures": [
+    {
+      "conversation_id": 84,
+      "failure": "Known Hibrido requirements repeatedly reopened action_requirement discovery."
+    },
+    {
+      "conversation_id": 85,
+      "failure": "A short acceptance after the app-link CTA did not deliver the link and reopened explanation."
+    },
+    {
+      "conversation_id": 86,
+      "failure": "A short acceptance after the app-link CTA reopened business discovery before a later explicit link request."
+    },
+    {
+      "conversation_id": 89,
+      "failure": "The action enumeration was explained correctly but did not persist the requirement, so action discovery repeated."
+    }
+  ],
+  "cases": [
+    {
+      "id": "PROD-84-ACTION-SELECTION",
+      "source_conversation_id": 84,
+      "case_type": "stateful_turn",
+      "repeat": 5,
+      "recent_messages": [
+        {
+          "role": "assistant",
+          "content": "Perfecto, para ayudarte mejor quisiera saber:\n\n¿Quieres que el agente solo responda y capture datos en WhatsApp, o también quieres que haga acciones como agendar citas, cotizar o registrar información en sistemas externos?\n\nAsí te puedo recomendar el agente MovIA ideal para tu consultorio dental. ¿Qué prefieres?",
+          "planner_context": {
+            "macro_action": "discover_need",
+            "micro_action": "ask_action_requirement",
+            "next_question_key": "action_requirement"
+          }
+        }
+      ],
+      "current_message": "Las dos",
+      "initial_profile": {
+        "business_type": "consultorio dental",
+        "requirement_profile": {"requirement_class": "unknown"}
+      },
+      "expected": {
+        "reply_act": "provide_answer",
+        "action_requirement": "external_actions_required",
+        "requirement_class": "external_actions",
+        "recommended_product": "movia_hibrido",
+        "forbidden_next_question_keys": ["action_requirement"]
+      }
+    },
+    {
+      "id": "PROD-84-ACTION-ENUMERATION",
+      "source_conversation_id": 84,
+      "case_type": "stateful_turn",
+      "repeat": 5,
+      "recent_messages": [
+        {
+          "role": "assistant",
+          "content": "Para avanzar, dime por favor: ¿qué acciones específicas necesitas que el agente realice además de responder y capturar?",
+          "planner_context": {
+            "macro_action": "discover_need",
+            "micro_action": "ask_action_requirement",
+            "next_question_key": "action_requirement",
+            "target_product": "movia_hibrido"
+          }
+        }
+      ],
+      "current_message": "agendar, cotizar o registrar información cuando sea viable.",
+      "initial_profile": {
+        "known_product_fit": "movia_hibrido",
+        "product_context": {"active_product_context": "movia_hibrido"}
+      },
+      "expected": {
+        "requested_agent_actions": [
+          "schedule_appointment",
+          "generate_quote",
+          "write_external_system"
+        ],
+        "requirement_update_intent": "merge",
+        "requirement_class": "external_actions",
+        "recommended_product": "movia_hibrido",
+        "forbidden_next_question_keys": ["action_requirement"]
+      }
+    },
+    {
+      "id": "PROD-84-EXPLAIN-KNOWN-HIBRIDO",
+      "source_conversation_id": 84,
+      "case_type": "stateful_turn",
+      "recent_messages": [
+        {
+          "role": "assistant",
+          "content": "¿Quieres que te explique más sobre cómo funciona MovIA Híbrido o prefieres una cotización?",
+          "planner_context": {
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_hibrido",
+            "next_question_key": "explain_or_price",
+            "target_product": "movia_hibrido"
+          }
+        }
+      ],
+      "current_message": "explicame mas",
+      "initial_profile": {
+        "known_product_fit": "movia_hibrido",
+        "requirement_profile": {
+          "requirement_class": "external_actions",
+          "external_actions": [
+            {"type": "schedule_appointment", "active": true},
+            {"type": "generate_quote", "active": true}
+          ]
+        }
+      },
+      "expected": {
+        "reply_act": "ask_followup",
+        "active_product_context": "movia_hibrido",
+        "forbidden_next_question_keys": ["action_requirement", "automation_need"]
+      }
+    },
+    {
+      "id": "PROD-84-PRICE-KNOWN-HIBRIDO",
+      "source_conversation_id": 84,
+      "case_type": "stateful_turn",
+      "recent_messages": [
+        {
+          "role": "assistant",
+          "content": "¿Quieres que te cuente más sobre cómo implementar MovIA Híbrido en tu consultorio dental?",
+          "planner_context": {
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_hibrido",
+            "target_product": "movia_hibrido"
+          }
+        }
+      ],
+      "current_message": "cuanto cuesta",
+      "initial_profile": {
+        "known_product_fit": "movia_hibrido",
+        "product_context": {"active_product_context": "movia_hibrido"},
+        "requirement_profile": {
+          "requirement_class": "external_actions",
+          "external_actions": [{"type": "generate_quote", "active": true}]
+        }
+      },
+      "expected": {
+        "primary_intent": "pricing_question",
+        "active_product_context": "movia_hibrido",
+        "required_response_facts": ["7500", "500"],
+        "forbidden_next_question_keys": ["action_requirement", "automation_need"]
+      }
+    },
+    {
+      "id": "PROD-85-LINK-ACCEPTANCE",
+      "source_conversation_id": 85,
+      "case_type": "stateful_turn",
+      "repeat": 5,
+      "recent_messages": [
+        {
+          "role": "assistant",
+          "content": "Si quieres, el siguiente paso es entrar a la app de MovIA y crear tu proyecto. ¿Quieres que te comparta el enlace para que puedas comenzar?",
+          "planner_context": {
+            "macro_action": "recommend_solution",
+            "micro_action": "ask_permission_to_send_link",
+            "cta_type": "ask_permission_to_send_link",
+            "next_question_key": "link_start_confirmation",
+            "target_product": "movia_captura"
+          }
+        }
+      ],
+      "current_message": "Si porfavor",
+      "initial_profile": {
+        "known_product_fit": "movia_captura",
+        "action_requirement": "answers_only"
+      },
+      "expected": {
+        "reply_act": "accept",
+        "explicit_start_intent": true,
+        "selected_product": "movia_captura",
+        "required_knowledge_needs": ["official_app_link"],
+        "required_response_facts": ["https://app.moviatech.com.mx"],
+        "forbidden_next_question_keys": ["business_type", "action_requirement", "automation_need"]
+      }
+    },
+    {
+      "id": "PROD-86-LINK-ACCEPTANCE",
+      "source_conversation_id": 86,
+      "case_type": "stateful_turn",
+      "repeat": 5,
+      "recent_messages": [
+        {
+          "role": "assistant",
+          "content": "Si quieres, el siguiente paso es entrar a la app de MovIA y crear tu proyecto. ¿Quieres que te pase el link?",
+          "planner_context": {
+            "macro_action": "recommend_solution",
+            "micro_action": "ask_permission_to_send_link",
+            "cta_type": "ask_permission_to_send_link",
+            "next_question_key": "link_start_confirmation",
+            "target_product": "movia_captura"
+          }
+        }
+      ],
+      "current_message": "Si porfavor",
+      "initial_profile": {
+        "known_product_fit": "movia_captura",
+        "action_requirement": "answers_only"
+      },
+      "expected": {
+        "reply_act": "accept",
+        "explicit_start_intent": true,
+        "selected_product": "movia_captura",
+        "required_response_facts": ["https://app.moviatech.com.mx"],
+        "forbidden_next_question_keys": ["business_type", "action_requirement", "automation_need"]
+      }
+    },
+    {
+      "id": "PROD-89-ACTION-FRAME",
+      "source_conversation_id": 89,
+      "case_type": "stateful_turn",
+      "repeat": 5,
+      "recent_messages": [
+        {
+          "role": "user",
+          "content": "El seguimiento de un cliente de agencia de viajes, implica ver opciones de paquetes, fechas, vuelos, etc, costos y cotizar continuamente"
+        },
+        {
+          "role": "assistant",
+          "content": "Para avanzar, dime: ¿el agente solo debe responder y capturar datos, o también quieres que haga acciones como agendar, cotizar o registrar información?",
+          "planner_context": {
+            "macro_action": "discover_need",
+            "micro_action": "ask_action_requirement",
+            "next_question_key": "action_requirement"
+          }
+        }
+      ],
+      "current_message": "Cotizar, responder, dar información,",
+      "initial_profile": {
+        "business_type": "agencia de viajes",
+        "pain_or_goal": "dar seguimiento a clientes y cotizar opciones continuamente"
+      },
+      "expected": {
+        "reply_act": "provide_answer",
+        "requested_agent_actions": ["generate_quote"],
+        "requested_agent_capabilities": [
+          "answer_customer_questions",
+          "provide_catalog_information"
+        ],
+        "requirement_class": "external_actions",
+        "recommended_product": "movia_hibrido",
+        "forbidden_next_question_keys": ["action_requirement", "automation_need"]
+      }
+    },
+    {
+      "id": "ACTOR-CURRENT-QUOTE-AND-LINK",
+      "case_type": "analyzer_turn",
+      "repeat": 5,
+      "recent_messages": [],
+      "current_message": "Mándame una cotización de Híbrido y el link para pagar",
+      "expected": {
+        "primary_intent": "explicit_start_request",
+        "secondary_intents": ["pricing_question"],
+        "requested_agent_actions": [],
+        "requested_agent_capabilities": [],
+        "purchase_readiness": "explicit_start",
+        "product_references": [
+          {"product": "movia_hibrido", "reference_role": "question_subject"}
+        ]
+      }
+    },
+    {
+      "id": "ACTOR-FUTURE-QUOTE-AND-PAYMENT",
+      "case_type": "analyzer_turn",
+      "repeat": 5,
+      "recent_messages": [],
+      "current_message": "Quiero que el agente cotice los paquetes y cobre con tarjeta a mis clientes",
+      "expected": {
+        "requested_agent_actions": ["generate_quote", "take_payment"],
+        "requested_agent_capabilities": [],
+        "purchase_readiness": "none",
+        "explicit_start_intent": false
+      }
+    },
+    {
+      "id": "ACTOR-CURRENT-CALL-REQUEST",
+      "case_type": "analyzer_turn",
+      "repeat": 5,
+      "recent_messages": [],
+      "current_message": "Agéndame una llamada para que me expliques MovIA",
+      "expected": {
+        "requested_agent_actions": [],
+        "purchase_readiness": "none"
+      }
+    },
+    {
+      "id": "REPLY-EXPLANATION-ACCEPTANCE",
+      "case_type": "contextual_reply",
+      "repeat": 5,
+      "recent_messages": [
+        {
+          "role": "assistant",
+          "content": "¿Quieres que te explique cómo funciona Híbrido en tu negocio?",
+          "planner_context": {
+            "macro_action": "recommend_solution",
+            "micro_action": "recommend_movia_hibrido",
+            "next_question_key": "explain_more",
+            "target_product": "movia_hibrido"
+          }
+        }
+      ],
+      "current_message": "Sí",
+      "expected": {
+        "reply_act": "accept",
+        "explicit_start_intent": false,
+        "active_product_context": "movia_hibrido"
+      }
+    },
+    {
+      "id": "REPLY-LINK-DECLINE-WITH-QUESTION",
+      "case_type": "contextual_reply",
+      "repeat": 5,
+      "recent_messages": [
+        {
+          "role": "assistant",
+          "content": "¿Quieres que te mande el link para empezar?",
+          "planner_context": {
+            "micro_action": "ask_permission_to_send_link",
+            "cta_type": "ask_permission_to_send_link",
+            "next_question_key": "link_start_confirmation",
+            "target_product": "movia_hibrido"
+          }
+        }
+      ],
+      "current_message": "Todavía no, ¿el depósito es reembolsable?",
+      "expected": {
+        "reply_act": "decline",
+        "explicit_start_intent": false,
+        "primary_intent": "policy_question"
+      }
+    },
+    {
+      "id": "OBJECTION-ACTIVE-RESOLVED",
+      "case_type": "analyzer_turn",
+      "repeat": 5,
+      "current_message": "Bueno, con ese ahorro ya me hace sentido",
+      "initial_profile": {
+        "active_objection": {
+          "type": "price_objection",
+          "strength": "hard",
+          "active": true
+        }
+      },
+      "expected": {
+        "objection_candidate": "none",
+        "active_objection_relation": "resolved",
+        "active_objection_after": "none"
+      }
+    },
+    {
+      "id": "OBJECTION-ACTIVE-REAFFIRMED",
+      "case_type": "analyzer_turn",
+      "repeat": 5,
+      "current_message": "Aun así sigue siendo demasiado caro para mí",
+      "initial_profile": {
+        "active_objection": {
+          "type": "price_objection",
+          "strength": "hard",
+          "active": true
+        }
+      },
+      "expected": {
+        "objection_candidate": "price_objection",
+        "active_objection_relation": "reaffirmed",
+        "active_objection_after": "price_objection"
+      }
+    },
+    {
+      "id": "OBJECTION-ACTIVE-UNRELATED-QUESTION",
+      "case_type": "analyzer_turn",
+      "repeat": 5,
+      "current_message": "¿Y cuánto tarda en quedar listo?",
+      "initial_profile": {
+        "active_objection": {
+          "type": "price_objection",
+          "strength": "hard",
+          "active": true
+        }
+      },
+      "expected": {
+        "objection_candidate": "none",
+        "active_objection_relation": "unrelated",
+        "active_objection_after": "price_objection"
+      }
+    },
+    {
+      "id": "PRODUCT-COMPARISON",
+      "case_type": "analyzer_turn",
+      "repeat": 5,
+      "current_message": "¿Captura puede agendar o para eso necesito Híbrido?",
+      "expected": {
+        "primary_intent": "comparison_question",
+        "product_references": [
+          {"product": "movia_captura", "reference_role": "question_subject"},
+          {"product": "movia_hibrido", "reference_role": "comparison_alternative"}
+        ],
+        "selected_product": null,
+        "required_product_contexts": ["movia_captura", "movia_hibrido"]
+      }
+    },
+    {
+      "id": "PRODUCT-CROSS-QUESTION-PRESERVES-SELECTION",
+      "case_type": "stateful_turn",
+      "repeat": 5,
+      "current_message": "Ya elegí Captura, pero ¿cuánto cuesta Híbrido?",
+      "initial_profile": {
+        "selected_product": "movia_captura",
+        "confirmed_product": "movia_captura"
+      },
+      "expected": {
+        "product_references": [
+          {"product": "movia_captura", "reference_role": "committed"},
+          {"product": "movia_hibrido", "reference_role": "question_subject"}
+        ],
+        "selected_product": "movia_captura",
+        "confirmed_product": "movia_captura",
+        "active_product_context": "movia_hibrido"
+      }
+    },
+    {
+      "id": "PRODUCT-EXPLICIT-COMMITMENT",
+      "case_type": "stateful_turn",
+      "repeat": 5,
+      "current_message": "Me quedo con Híbrido, quiero contratarlo",
+      "initial_profile": {
+        "requirement_profile": {
+          "requirement_class": "external_actions",
+          "external_actions": [{"type": "generate_quote", "active": true}]
+        }
+      },
+      "expected": {
+        "product_references": [
+          {"product": "movia_hibrido", "reference_role": "committed"}
+        ],
+        "selected_product": "movia_hibrido",
+        "explicit_start_intent": true
+      }
+    },
+    {
+      "id": "REQUIREMENT-MERGE-PRESERVES-SCHEDULING",
+      "case_type": "requirement_delta",
+      "repeat": 5,
+      "current_message": "Sin dejar de agendar, también quiero que cotice",
+      "initial_profile": {
+        "requirement_profile": {
+          "requirement_class": "external_actions",
+          "external_actions": [{"type": "schedule_appointment", "active": true}]
+        }
+      },
+      "expected": {
+        "requirement_update_intent": "merge",
+        "active_external_actions": ["schedule_appointment", "generate_quote"]
+      }
+    },
+    {
+      "id": "REQUIREMENT-EXPLICIT-REMOVAL",
+      "case_type": "requirement_delta",
+      "repeat": 5,
+      "current_message": "Ya no quiero que agende; cotizar sí se queda",
+      "initial_profile": {
+        "requirement_profile": {
+          "requirement_class": "external_actions",
+          "external_actions": [
+            {"type": "schedule_appointment", "active": true},
+            {"type": "generate_quote", "active": true}
+          ]
+        }
+      },
+      "expected": {
+        "active_external_actions": ["generate_quote"],
+        "inactive_external_actions": ["schedule_appointment"]
+      }
+    },
+    {
+      "id": "REQUIREMENT-REPLACE",
+      "case_type": "requirement_delta",
+      "repeat": 5,
+      "current_message": "Ya no quiero lo anterior, ahora solo necesito que responda dudas",
+      "initial_profile": {
+        "requirement_profile": {
+          "requirement_class": "external_actions",
+          "external_actions": [
+            {"type": "schedule_appointment", "active": true},
+            {"type": "generate_quote", "active": true}
+          ]
+        }
+      },
+      "expected": {
+        "requirement_update_intent": "replace",
+        "active_external_actions": [],
+        "active_informational_capabilities": ["answer_customer_questions"],
+        "requirement_class": "informational_only"
+      }
+    },
+    {
+      "id": "PLANNER-UNKNOWN-DOES-NOT-REOPEN-COMPLETE-PROFILE",
+      "case_type": "planner_turn",
+      "current_message": "ok",
+      "initial_profile": {
+        "business_type": "agencia de viajes",
+        "main_channel": "whatsapp",
+        "known_product_fit": "movia_hibrido",
+        "requirement_profile": {
+          "requirement_class": "external_actions",
+          "external_actions": [{"type": "generate_quote", "active": true}]
+        }
+      },
+      "expected": {
+        "forbidden_macro_actions": ["discover_need", "answer_unknown_safely"],
+        "forbidden_next_question_keys": ["automation_need", "action_requirement", "business_type"]
+      }
+    }
+  ]
+}

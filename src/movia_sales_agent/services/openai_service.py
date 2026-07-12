@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
@@ -11,6 +12,7 @@ from movia_sales_agent.analyzer.contract_v3 import (
     ANALYZER_CONTRACT_VERSION,
     ANALYZER_V3_SCHEMA,
     AnalyzerTurnObservation,
+    ObjectionCandidateObservation,
     legacy_analysis_to_observation,
     observation_to_turn_analysis,
     validate_analyzer_observation,
@@ -173,7 +175,10 @@ class OpenAIService:
         return analysis, usage
 
     def analyze_turn_v3_with_usage(
-        self, message: str, recent_messages: List[Dict[str, Any]]
+        self,
+        message: str,
+        recent_messages: List[Dict[str, Any]],
+        interaction_context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[TurnAnalysis, Dict[str, Any], AnalyzerTurnObservation]:
         if not self.enabled:
             analysis = heuristic_analysis(message)
@@ -181,33 +186,35 @@ class OpenAIService:
             usage = empty_usage("analysis", self.settings.analysis_model, "fallback")
             usage["details"] = {"analyzer_contract_version": ANALYZER_CONTRACT_VERSION}
             return analysis, usage, observation
-        prompt = (
-            "Analiza un mensaje de preventa de MovIA y devuelve solo JSON válido bajo Analyzer Contract V3.1. "
-            "Tu tarea es observar lenguaje, no tomar decisiones comerciales. "
-            "No recomiendes producto, no elijas etapa, no elijas acción comercial, no decidas CTA y no generes next_question. "
-            "No devuelvas has_objection, references_prior_message, explicit_start_intent, explicit_turn_number, "
-            "action_requirement, known_product_fit, recommended_product, sales_stage, macro_action, micro_action, cta_type ni needs_rag. "
-            "Distingue entre lo que la persona le pregunta al vendedor de MovIA ahora y lo que quiere que haga el agente después de comprarlo. "
-            "observed_business_problems captura dolores operativos actuales observables en el mensaje. "
-            "requested_agent_capabilities solo captura capacidades futuras pedidas explícitamente para el agente comprado. "
-            "requested_agent_actions solo captura acciones externas futuras pedidas explícitamente para ese agente, como agendar, cotizar, registrar, leer o escribir en sistemas. "
-            "requirement_update_intent=no_change si el mensaje no cambia requisitos del agente futuro, merge si agrega requisitos nuevos, replace si redefine o limita explícitamente requisitos anteriores. "
-            "No conviertas preguntas actuales de precio, proceso o venta al asesor en capacidades futuras del agente. "
-            "requested_product solo identifica un producto mencionado por el usuario; nunca recomiendes uno. "
-            "Una pregunta de precio no es una objeción; solo marca price_objection cuando haya resistencia a pagar. "
-            "purchase_readiness.level=explicit_start solo si el usuario pide iniciar, contratar, pagar o recibir link. "
-            "prior_reference.type no debe usar turnos numéricos; usa topic/entity/assistant commitment cuando haya evidencia. "
-            "Cada evidence_span requerido debe ser una frase literal del mensaje actual."
-        )
+        prompt = _general_analyzer_prompt()
+        if (
+            (interaction_context or {}).get("previous_planner", {}).get(
+                "next_question_key"
+            )
+            == "action_requirement"
+        ):
+            prompt = _action_requirement_analyzer_prompt()
+        elif (interaction_context or {}).get("commercial_state", {}).get(
+            "active_objection"
+        ):
+            prompt = f"{_active_objection_focus_prompt()} {prompt}"
+        analyzer_schema = _analyzer_schema_for_context(interaction_context or {})
         try:
             response = self.client.responses.create(
                 model=self.settings.analysis_model,
+                temperature=0,
                 input=[
                     {"role": "system", "content": prompt},
                     {
                         "role": "user",
                         "content": json.dumps(
-                            {"message": message, "recent_messages": recent_messages[-6:]},
+                            {
+                                "message": message,
+                                "recent_messages": compact_analyzer_recent_messages(
+                                    recent_messages
+                                ),
+                                "interaction_context": interaction_context or {},
+                            },
                             ensure_ascii=False,
                             default=json_default,
                         ),
@@ -216,18 +223,24 @@ class OpenAIService:
                 text={
                     "format": {
                         "type": "json_schema",
-                        "name": "movia_analyzer_observation_v3",
-                        "schema": ANALYZER_V3_SCHEMA,
+                        "name": "movia_analyzer_observation_v3_2",
+                        "schema": analyzer_schema,
                         "strict": True,
                     }
                 },
             )
             usage = response_usage(response, "analysis", self.settings.analysis_model, "openai")
             observation = validate_analyzer_observation(json.loads(response.output_text), message)
+            contextual_repairs = _apply_contextual_observation_invariants(
+                observation,
+                interaction_context or {},
+            )
             usage["details"] = {
                 **dict(usage.get("details") or {}),
                 "analyzer_contract_version": ANALYZER_CONTRACT_VERSION,
             }
+            if contextual_repairs:
+                usage["details"]["contextual_repairs"] = contextual_repairs
             analysis = normalize_analysis(message, observation_to_turn_analysis(observation, message))
             return analysis, usage, observation
         except Exception as exc:
@@ -294,6 +307,127 @@ def empty_usage(operation: str, model: str, provider: str) -> Dict[str, Any]:
         "output_tokens": 0,
         "total_tokens": 0,
     }
+
+
+def compact_analyzer_recent_messages(
+    recent_messages: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Keep dialogue text while planner/state metadata travels separately."""
+
+    compact: List[Dict[str, Any]] = []
+    for message in recent_messages[-6:]:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "")
+        content = message.get("content")
+        if not role or content is None:
+            continue
+        compact.append({"role": role, "content": content})
+    return compact
+
+
+def _analyzer_schema_for_context(interaction_context: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply context-known invariants without changing the public V3.2 schema."""
+
+    if not (interaction_context.get("commercial_state") or {}).get("active_objection"):
+        return ANALYZER_V3_SCHEMA
+    schema = copy.deepcopy(ANALYZER_V3_SCHEMA)
+    relation_schema = (schema.get("$defs") or {}).get("AnalyzerActiveObjectionRelation") or {}
+    relation_schema["enum"] = [
+        value for value in relation_schema.get("enum") or [] if value != "none"
+    ]
+    return schema
+
+
+def _apply_contextual_observation_invariants(
+    observation: AnalyzerTurnObservation,
+    interaction_context: Dict[str, Any],
+) -> List[str]:
+    active_objection = (interaction_context.get("commercial_state") or {}).get(
+        "active_objection"
+    ) or {}
+    active_type = str(active_objection.get("type") or "")
+    candidate_type = str(observation.objection_candidate.type)
+    relation = str(observation.active_objection_relation.relation)
+    if (
+        active_type
+        and candidate_type == active_type
+        and relation in {"resolved", "unrelated"}
+    ):
+        observation.objection_candidate = ObjectionCandidateObservation()
+        return ["duplicate_active_objection_candidate_cleared_for_relation"]
+    return []
+
+
+def _general_analyzer_prompt() -> str:
+    return (
+        "Solo JSON válido de Analyzer Contract V3.2. Observa hechos; no decidas producto, etapa, "
+        "planner action, CTA, next_question ni derivados. Separa actores por cláusula: 'quiero que el "
+        "agente X' describe al agente futuro y usa requirement_update_intent=merge; 'cotízame', "
+        "'agéndame' o 'mándame' se dirige al vendedor MovIA actual y no es requisito. En mensajes "
+        "mixtos conserva ambos actores. take_payment solo significa que el agente futuro cobra a "
+        "clientes. Contratar/pagar MovIA o pedir su link es compra actual; pedir link para pagar es "
+        "explicit_start_request y readiness explicit_start. Si también pide cotización o precio, "
+        "conserva pricing_question como secondary_intent. Pedir una llamada o cita con MovIA no es "
+        "intención de compra. Extrae lo literal mínimo: cotizar="
+        "generate_quote; cobrar clientes=take_payment; agendar=schedule_appointment; registrar en "
+        "sistema=write_external_system; responder=answer_customer_questions; dar información="
+        "provide_catalog_information. No infieras capacidades vecinas: cotizar/cobrar no implica "
+        "catálogo, objeciones, cierre o persuasión; Captura no implica capture_lead_data. Una respuesta "
+        "a next_question_key=action_requirement hereda al agente futuro como actor. no_change no lleva "
+        "requisitos; merge agrega/corrige conservando; replace sustituye; 'sin dejar de X, también Y' "
+        "es merge. product_references solo contiene productos literales: pregunta=question_subject, "
+        "alternativa=comparison_alternative, preferencia=preferred, elección=committed, mención="
+        "mentioned. Dos productos comparados => comparison_question. El producto preguntado siempre "
+        "es question_subject aunque otro esté committed/preferred. Mencionar no selecciona. "
+        "objection_candidate exige resistencia actual; preguntar precio no objeta. Una negativa a un "
+        "CTA no elimina otra pregunta explícita del mismo mensaje; depósito/reembolso es policy_question. "
+        "Con objeción activa, "
+        "relation es resolved/clarified/reaffirmed/continuation/unrelated; sin ella es none. "
+        "post_purchase exige pago realizado. evidence_span es el menor span literal de current_message. "
+        "Ejemplos: 'Quiero que el agente cotice y cobre con tarjeta' => generate_quote+take_payment, "
+        "readiness none. 'Mándame cotización y link para pagar' => sin requisitos futuros, "
+        "explicit_start_request. 'Agéndame una llamada para explicarme MovIA' => sin requisitos y "
+        "readiness none. "
+        "'¿Captura puede agendar o necesito Híbrido?' => Captura question_subject, Híbrido "
+        "comparison_alternative. 'Ya elegí Captura, pero ¿cuánto cuesta Híbrido?' => Captura committed, "
+        "Híbrido question_subject. 'Mándame el link para contratar Híbrido' => Híbrido committed."
+    )
+
+
+def _action_requirement_analyzer_prompt() -> str:
+    return (
+        "Devuelve solo JSON válido bajo Analyzer Contract V3.2. La pregunta inmediatamente "
+        "anterior fue creada por el planner para conocer requisitos del agente que el lead compraría; "
+        "por eso current_message hereda al agente futuro como actor sin repetir 'quiero que el agente'. "
+        "Extrae cada elemento literal de la respuesta. cotizar una solución personalizada=generate_quote; "
+        "agendar=schedule_appointment; registrar o guardar en un sistema=write_external_system; "
+        "responder preguntas=answer_customer_questions; dar información de productos o servicios="
+        "provide_catalog_information. Responder y dar información son capacidades, nunca acciones "
+        "externas, unknown_external_action ni send_notification. Usa unknown_external_action solo para "
+        "un efecto externo real sin enum canónico. requirement_update_intent=merge cuando agrega estos "
+        "requisitos. No infieras compra, objeción, producto ni capacidades no expresadas. "
+        "purchase_readiness=none salvo que current_message además pida explícitamente iniciar, contratar, "
+        "pagar MovIA o recibir el link. Toda evidencia debe ser un span literal mínimo de current_message. "
+        "No devuelvas campos derivados del planner ni recomiendes producto."
+    )
+
+
+def _active_objection_focus_prompt() -> str:
+    return (
+        "FOCO OBLIGATORIO PARA OBJECIÓN ACTIVA: commercial_state.active_objection contiene un "
+        "bloqueo activo, por lo que active_objection_relation no puede ser none. Usa resolved solo "
+        "si current_message elimina o acepta el bloqueo; clarified solo si explica qué significa ese "
+        "mismo bloqueo; reaffirmed solo si repite literalmente la misma resistencia; continuation si "
+        "sigue negociando o preguntando sobre ese bloqueo; unrelated si pregunta por otro tema sin "
+        "volver a expresar la resistencia. Una pregunta de producto o capacidad durante una objeción "
+        "de precio es unrelated, no reaffirmed ni clarified, salvo que current_message también vuelva "
+        "a mencionar el precio, costo o presupuesto como problema. Para una price_objection, "
+        "continuation exige continuar explícitamente ese tema; una pregunta separada de capacidad es "
+        "unrelated. 'Con ese ahorro ya me hace sentido' "
+        "=> candidate none y resolved; toda relation=resolved exige candidate none. 'Sigue siendo caro "
+        "para mí' => reaffirmed. '¿Cuánto tarda en quedar listo?' => candidate none y unrelated."
+    )
 
 
 def response_usage(response: Any, operation: str, model: str, provider: str) -> Dict[str, Any]:

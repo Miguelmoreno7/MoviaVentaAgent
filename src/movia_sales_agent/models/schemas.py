@@ -176,6 +176,7 @@ class AgentState(TypedDict, total=False):
     lead_id: Optional[str]
     lead_profile: Dict[str, Any]
     recent_messages: List[Dict[str, Any]]
+    interaction_context: Dict[str, Any]
     structured_memory: Dict[str, Any]
     conversation_memory_evidence: List[Dict[str, Any]]
     shadow_parser: Dict[str, Any]
@@ -183,6 +184,7 @@ class AgentState(TypedDict, total=False):
     reply_frame: Dict[str, Any]
     reply_frame_resolution: Dict[str, Any]
     normalized_turn: Dict[str, Any]
+    requirement_delta_resolution: Dict[str, Any]
     purchase_status: Dict[str, Any]
     analysis: TurnAnalysis
     sales_plan: SalesPlan

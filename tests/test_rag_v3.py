@@ -94,6 +94,30 @@ def test_audio_capability_question_loads_product_capabilities():
     assert "postgres.products" in knowledge_plan.structured_sources
 
 
+def test_multi_product_comparison_loads_official_product_facts_for_both_references():
+    message = "¿Captura puede agendar o para eso necesito Híbrido?"
+    analysis = TurnAnalysis(primary_intent=Intent.COMPARISON_QUESTION)
+    sales_plan = SalesPolicyPlanner().plan(analysis, {}, message=message)
+    knowledge_plan = KnowledgePlanner().plan(
+        analysis,
+        sales_plan,
+        message,
+        normalized_turn={
+            "product_references": [
+                {"product": "movia_captura", "reference_role": "question_subject"},
+                {
+                    "product": "movia_hibrido",
+                    "reference_role": "comparison_alternative",
+                },
+            ]
+        },
+    )
+
+    assert "product_comparison" in knowledge_plan.knowledge_needs
+    assert "product_capabilities" in knowledge_plan.knowledge_needs
+    assert "postgres.products" in knowledge_plan.structured_sources
+
+
 def test_direct_close_loads_products_policies_and_platform_steps_additively():
     message = "Quiero empezar con MovIA Captura, pásame el link."
     analysis = heuristic_analysis(message)

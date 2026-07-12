@@ -1035,7 +1035,10 @@ def turn_diagnostics_payload(
         },
         "analyzer_observation": {
             "objection_candidate": analyzer_observation.get("objection_candidate"),
-            "requested_product": analyzer_observation.get("requested_product"),
+            "active_objection_relation": analyzer_observation.get(
+                "active_objection_relation"
+            ),
+            "product_references": analyzer_observation.get("product_references") or [],
             "purchase_readiness": analyzer_observation.get("purchase_readiness"),
             "observed_business_problems": analyzer_observation.get("observed_business_problems")
             or [],
@@ -1048,6 +1051,7 @@ def turn_diagnostics_payload(
         },
         "normalized_turn": {
             "normalized_objection": normalized_turn.get("normalized_objection"),
+            "product_references": normalized_turn.get("product_references") or [],
             "requested_product": normalized_turn.get("requested_product"),
             "requirement_class": normalized_turn.get("requirement_class"),
             "action_requirement": normalized_turn.get("action_requirement"),

@@ -136,7 +136,7 @@ def test_explicit_requirement_replacement_deactivates_prior_external_actions():
     assert second.lead_state["profile_data"]["known_product_fit"] == ProductFit.MOVIA_CAPTURA.value
 
 
-def test_scope_narrowing_replaces_even_when_analyzer_marks_merge():
+def test_semantic_delta_replaces_without_phrase_reclassification():
     existing = merge_requirement_profile(
         empty_requirement_profile(),
         {
@@ -179,6 +179,12 @@ def test_scope_narrowing_replaces_even_when_analyzer_marks_merge():
         },
         message="No, eso ya se fue muy caro. Entonces mejor solo que responda precios.",
         existing_profile=existing,
+        semantic_resolution={
+            "operation": "replace",
+            "removed_agent_actions": ["schedule_appointment"],
+            "removed_agent_capabilities": [],
+            "evidence_span": "mejor solo que responda precios",
+        },
     )
     updated = merge_requirement_profile(existing, delta, turn_number=2)
 
@@ -187,6 +193,109 @@ def test_scope_narrowing_replaces_even_when_analyzer_marks_merge():
     assert "schedule_appointment" not in {
         item["type"] for item in updated["external_actions"] if item.get("active")
     }
+
+
+def test_semantic_merge_does_not_invert_sin_dejar_de():
+    existing = merge_requirement_profile(
+        empty_requirement_profile(),
+        {
+            "update_type": "merge",
+            "new_observed_problems": [],
+            "new_informational_capabilities": [],
+            "new_sales_capabilities": [],
+            "new_external_actions": [
+                {
+                    "type": "schedule_appointment",
+                    "evidence_span": "agendar",
+                    "strength": "explicit",
+                }
+            ],
+            "removed_informational_capabilities": [],
+            "removed_sales_capabilities": [],
+            "removed_external_actions": [],
+            "declared_external_action_count": None,
+        },
+        turn_number=1,
+    )
+    delta = current_turn_requirement_delta(
+        normalized_turn={
+            "requested_agent_capabilities": [],
+            "requested_agent_actions": ["generate_quote"],
+            "requirement_update_intent": "merge",
+        },
+        analyzer_observation={
+            "requested_agent_capabilities": [],
+            "requested_agent_actions": [
+                {
+                    "type": "generate_quote",
+                    "evidence_span": "cotice",
+                    "requirement_strength": "explicit",
+                }
+            ],
+            "requirement_update_intent": "merge",
+        },
+        message="Sin dejar de agendar, también quiero que cotice",
+        existing_profile=existing,
+        semantic_resolution={
+            "operation": "merge",
+            "removed_agent_actions": [],
+            "removed_agent_capabilities": [],
+            "evidence_span": "Sin dejar de agendar, también quiero que cotice",
+        },
+    )
+    updated = merge_requirement_profile(existing, delta, turn_number=2)
+
+    assert {
+        item["type"] for item in updated["external_actions"] if item.get("active")
+    } == {"schedule_appointment", "generate_quote"}
+
+
+def test_semantic_delta_removes_only_the_named_active_action():
+    existing = merge_requirement_profile(
+        empty_requirement_profile(),
+        {
+            "update_type": "merge",
+            "new_observed_problems": [],
+            "new_informational_capabilities": [],
+            "new_sales_capabilities": [],
+            "new_external_actions": [
+                {"type": "schedule_appointment", "evidence_span": "agendar"},
+                {"type": "generate_quote", "evidence_span": "cotizar"},
+            ],
+            "removed_informational_capabilities": [],
+            "removed_sales_capabilities": [],
+            "removed_external_actions": [],
+            "declared_external_action_count": None,
+        },
+        turn_number=1,
+    )
+    delta = current_turn_requirement_delta(
+        normalized_turn={
+            "requested_agent_capabilities": [],
+            "requested_agent_actions": ["generate_quote"],
+            "requirement_update_intent": "merge",
+        },
+        analyzer_observation={
+            "requested_agent_capabilities": [],
+            "requested_agent_actions": [
+                {"type": "generate_quote", "evidence_span": "cotizar"}
+            ],
+            "requirement_update_intent": "merge",
+        },
+        message="Ya no quiero que agende; cotizar sí se queda",
+        existing_profile=existing,
+        semantic_resolution={
+            "operation": "merge",
+            "removed_agent_actions": ["schedule_appointment"],
+            "removed_agent_capabilities": [],
+            "evidence_span": "Ya no quiero que agende",
+        },
+    )
+    updated = merge_requirement_profile(existing, delta, turn_number=2)
+
+    assert {
+        item["type"] for item in updated["external_actions"] if item.get("active")
+    } == {"generate_quote"}
 
 
 def test_scope_narrowing_does_not_replace_without_future_requirement_addition():
@@ -266,6 +375,44 @@ def test_product_reference_updates_active_context_without_selecting_product():
     )
 
     assert context["referenced_product"] == ProductFit.MOVIA_HIBRIDO.value
+    assert context["active_product_context"] == ProductFit.MOVIA_HIBRIDO.value
+    assert context["selected_product"] is None
+
+
+def test_cross_product_question_changes_active_context_but_preserves_confirmation():
+    context = resolve_product_context(
+        profile_data={
+            "selected_product": ProductFit.MOVIA_CAPTURA.value,
+            "confirmed_product": ProductFit.MOVIA_CAPTURA.value,
+            "product_context": {
+                "active_product_context": ProductFit.MOVIA_CAPTURA.value,
+                "selected_product": ProductFit.MOVIA_CAPTURA.value,
+                "confirmed_product": ProductFit.MOVIA_CAPTURA.value,
+            },
+        },
+        normalized_turn={
+            "product_references": [
+                {
+                    "product": ProductFit.MOVIA_HIBRIDO.value,
+                    "reference_role": "question_subject",
+                }
+            ]
+        },
+        turn_number=2,
+    )
+
+    assert context["active_product_context"] == ProductFit.MOVIA_HIBRIDO.value
+    assert context["selected_product"] == ProductFit.MOVIA_CAPTURA.value
+    assert context["confirmed_product"] == ProductFit.MOVIA_CAPTURA.value
+
+
+def test_known_product_fit_seeds_active_context_without_a_new_reference():
+    context = resolve_product_context(
+        profile_data={"known_product_fit": ProductFit.MOVIA_HIBRIDO.value},
+        normalized_turn={},
+        turn_number=2,
+    )
+
     assert context["active_product_context"] == ProductFit.MOVIA_HIBRIDO.value
     assert context["selected_product"] is None
 
